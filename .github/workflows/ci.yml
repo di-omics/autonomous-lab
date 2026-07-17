@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The federated claims are about a repo this one does not control, and the instrument
+  # registry is derived from another. Both can drift without a commit here, so check on a
+  # schedule too rather than only when someone touches this code.
+  schedule:
+    - cron: "0 14 * * 1"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is plr-re's floor (requires-python = ">=3.9"); pin the top end too so a new
+        # release cannot break the build without a commit here.
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        # Installs plr-re from git, which is the dependency the README tells users to
+        # expect. If that URL ever stops resolving, this is where it surfaces.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+      - name: Tests
+        run: pytest -q
+      - name: The CLI runs on a bare install
+        # The ledger is stdlib plus plr-re and touches no hardware, so it must compute in
+        # CI exactly as it does on a laptop. A non-zero exit is correct here: the protocol
+        # cannot run unattended, and `ledger` says so by exiting non-zero.
+        run: |
+          autonomous-lab stock
+          autonomous-lab protocols
+          autonomous-lab ledger single_cell_genomics || [ $? -eq 1 ]
+          autonomous-lab gaps || [ $? -eq 1 ]
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check autonomous_lab tests
+
+  ascii:
+    # House rule: strict ASCII. Enforced rather than remembered.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No non-ASCII bytes in tracked text
+        run: |
+          if LC_ALL=C grep -rlnP '[\x80-\xFF]' --include='*.py' --include='*.md' --include='*.toml' .; then
+            echo "non-ASCII bytes found in the files above"
+            exit 1
+          fi
+          echo "ascii clean"

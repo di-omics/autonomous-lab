@@ -93,12 +93,13 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
         f"{fed.device} is validated, but no run card for '{step.op}' has been validated "
         f"on it; someone writes and proves that script first",
       )
-    gate = f"confirm token {fed.confirm_token}" if fed.confirm_token else "an operator at the E-stop"
+    run = fed.validated_ops[step.op]
+    gate = f"confirm token {run.confirm_token}" if run.confirm_token else "an operator at the E-stop"
     return StepVerdict(
       step,
       Verdict.SUPERVISED,
       Tier.FEDERATED,
-      f"runs via {fed.entry}, gated on {gate}. Validated: {fed.validated_ops[step.op]}",
+      f"runs via {fed.entry} {run.script}, gated on {gate}. Validated: {run.evidence}",
     )
 
   # -- reverse-engineered instruments ----------------------------------------

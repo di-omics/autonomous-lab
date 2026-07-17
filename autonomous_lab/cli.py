@@ -16,6 +16,7 @@ import logging
 import sys
 from typing import List
 
+from .doctor import check_federated, render as render_checks
 from .executor import Executor
 from .ledger import build_ledger, rank_unlocks
 from .registry import FEDERATED, registry
@@ -118,6 +119,21 @@ def _gaps(args) -> int:
   return 1
 
 
+def _doctor(args) -> int:
+  """Check the federated claims against a real plr-tested checkout."""
+  wc = _workcell(args)
+  root = wc.plr_tested_root
+  if not root:
+    print(
+      "error: doctor needs a plr-tested checkout to check against; pass --plr-tested PATH",
+      file=sys.stderr,
+    )
+    return 2
+  checks = check_federated(root)
+  print(render_checks(checks))
+  return 0 if all(c.ok for c in checks) else 1
+
+
 def _run(args) -> int:
   wc = _workcell(args)
   report = Executor(wc, armed=args.armed).run(protocols.get(args.protocol))
@@ -156,6 +172,12 @@ def build_parser() -> argparse.ArgumentParser:
   gp.add_argument("protocol", nargs="?", help="default: all reference protocols")
   common(gp)
   gp.set_defaults(func=_gaps)
+
+  dc = sub.add_parser(
+    "doctor", help="check this package's claims about plr-tested against a real checkout"
+  )
+  common(dc)
+  dc.set_defaults(func=_doctor)
 
   rn = sub.add_parser("run", help="run a protocol as far as it honestly goes")
   rn.add_argument("protocol")
