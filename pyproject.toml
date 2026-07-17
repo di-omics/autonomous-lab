@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autonomous-lab"
+version = "0.1.0"
+description = "How much of an end-to-end lab run happens without a human, and what is in the way"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "di-omics" }]
+
+# plr-re is the only dependency: this package derives its instrument registry from
+# plr_re.protocolmap.SEEDS and calls plr-re's zero-decode readers. It is not on PyPI, so
+# it installs from git. Everything else is stdlib, so the ledger computes on a laptop.
+dependencies = [
+  "plr-re @ git+https://github.com/di-omics/plr-reverse-engineer",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+autonomous-lab = "autonomous_lab.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["autonomous_lab*"]
