@@ -92,6 +92,20 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
         f"the run card {run.script} exists and FAILED on the instrument: {run.evidence}",
       )
 
+    # A written-but-never-run script is not unwritten work and not validated work. The STAR
+    # bead cleanup is the case: a full SPRI state machine, dry-motion validated, wired into
+    # the runners, and never once run wet. It sits between manual and supervised, and its
+    # next action is a supervised wet run, not writing a script.
+    if step.op in fed.written_ops:
+      run = fed.written_ops[step.op]
+      return StepVerdict(
+        step,
+        Verdict.WRITTEN,
+        Tier.FEDERATED,
+        f"the run card {run.script} exists and runs dry, but has never run on {fed.device}: "
+        f"{run.evidence}",
+      )
+
     # An instrument's reputation does not transfer to an arbitrary step. plr-tested has a
     # validated whole-genome sequencing addition and a validated targeted PCR choreography; it has no validated
     # bead cleanup and no validated library pooling. A step with no run card of its own is

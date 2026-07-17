@@ -202,6 +202,33 @@ def test_federated_step_is_supervised_never_automated():
   assert v.verdict.headless is False
 
 
+def test_a_written_but_unrun_script_is_written_not_manual():
+  """The STAR bead cleanup: a real SPRI script, dry-validated, never run wet. "Someone
+  writes that script first" is false; the script exists. But it is not validated either."""
+  wc = Workcell.default()
+  wc.plr_tested_root = "/somewhere/plr-tested"
+  v = cost_step(Step(instrument="star", op="ampseq_pcr1_cleanup", summary="x"), wc)
+  assert v.verdict is Verdict.WRITTEN
+  assert v.verdict.headless is False
+  assert "runs dry" in v.reason and "never run on" in v.reason
+
+
+def test_written_is_distinct_from_manual_and_supervised():
+  """library_pool has no script (MANUAL); pta_wga_lysis is validated (SUPERVISED);
+  ampseq_pcr1_cleanup is WRITTEN. Three different facts about the same instrument."""
+  wc = Workcell.default()
+  wc.plr_tested_root = "/somewhere/plr-tested"
+  got = {
+    op: cost_step(Step(instrument="star", op=op, summary="x"), wc).verdict
+    for op in ("library_pool", "ampseq_pcr1_cleanup", "pta_wga_lysis")
+  }
+  assert got == {
+    "library_pool": Verdict.MANUAL,
+    "ampseq_pcr1_cleanup": Verdict.WRITTEN,
+    "pta_wga_lysis": Verdict.SUPERVISED,
+  }
+
+
 def test_federated_step_without_a_validated_run_card_is_manual():
   """An instrument's reputation must not transfer to an arbitrary step. plr-tested has no
   validated library-pooling script, so naming the STAR must not make one appear."""

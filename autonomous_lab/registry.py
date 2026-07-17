@@ -98,6 +98,11 @@ class FederatedSpec:
   # different facts, and leaving the second out would quietly flatter the lab by making a
   # known defect look like unwritten work.
   known_failures: Dict[str, ValidatedRun] = field(default_factory=dict)
+  # Operations whose run card exists and runs dry / sim-clean but has never touched the
+  # instrument. Between manual and validated: the pipetting is written, the motion is
+  # checked, and what remains is a supervised wet run. The evidence field carries what the
+  # script actually is and, honestly, how far from wet it stands.
+  written_ops: Dict[str, ValidatedRun] = field(default_factory=dict)
   note: str = ""
 
 
@@ -227,18 +232,30 @@ FEDERATED: Dict[str, FederatedSpec] = {
         ),
       ),
       "ampseq_choreography": ValidatedRun(
-        script="hamilton-star/starlab_live/run_ampseq_odtc_LIDDED_1col_full_thermocycle.py",
+        script="hamilton-star/starlab_live/run_ampseq_odtc_LIDDED_1col_full_dry.py",
         confirm_token="RUN_AMPSEQ_ODTC_LIDDED_FULL",
         evidence=(
-          "13 motion legs, 22 SUCCESS, 0 failures, deck self-returned to start; dry, and "
-          "--thermocycle was stopped in pre-warm on purpose rather than run to completion"
+          "the LIDDED choreography (9 motion legs plus 4 lid legs around the ODTC trip), "
+          "clean on the instrument, deck self-returned to start; dry, tag "
+          "ampseq-lidded-inwellmix-2026-07-16. A real thermal cycle inside it has not run"
         ),
-        plan_flag="--plan",
       ),
       "iswap_lid_move": ValidatedRun(
         script="hamilton-star/starlab_live/test_iswap_lid_variable.py",
         confirm_token="RUN_LID_MOVE",
         evidence="lid on and de-lid confirmed between rail35 pos4 and pos0",
+      ),
+    },
+    written_ops={
+      "ampseq_pcr1_cleanup": ValidatedRun(
+        script="hamilton-star/starlab_live/02_ampseq_pcr1_cleanup_col1_dry_v2_p50low.py",
+        confirm_token=None,
+        evidence=(
+          "full SPRI bead-clean state machine (beads, 2x ethanol, elution), 0.9X on 25 uL "
+          "PCR1; dry p50-low motion validated and sim-clean, wired into three end-to-end "
+          "runners as --mode all-dry. Never run wet: README names mock-liquid bead clean "
+          "as the intended next work, and it is still open priority #1"
+        ),
       ),
     },
     note="Dry runs only. A wet run of the full choreography is still owed.",
