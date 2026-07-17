@@ -32,15 +32,23 @@ checkout wired in via `--plr-tested`:
 
 | | steps | |
 | --- | --- | --- |
-| automated | 3 of 17 | run headless today: two link preflights and the AVITI run-folder read |
-| supervised | 2 of 17 | a validated run card exists in plr-tested, gated on a confirm token and an operator |
-| blocked | 8 of 17 | the command is undecoded; the coverage gate refuses the run |
-| manual | 4 of 17 | seating a cartridge, loading a flow cell, and two STAR steps nobody has written a validated script for |
+| automated | 3 of 18 | run headless today: two link preflights and the AVITI run-folder read |
+| supervised | 2 of 18 | a validated run card exists in plr-tested, gated on a confirm token and an operator |
+| blocked | 8 of 18 | the command is undecoded; the coverage gate refuses the run |
+| manual | 4 of 18 | seating a cartridge, loading a flow cell, and two STAR steps nobody has written a validated script for |
+| broken | 1 of 18 | the run card exists, was run on the instrument, and failed |
 
-**An unattended run reaches step 1 of 17 before it stops.** That number, not the 18%
+**An unattended run reaches step 1 of 18 before it stops.** That number, not the 17%
 autonomy figure, is what "how automated is this lab" actually means: a read-only step near
-the end is only reachable if everything before it also ran. There are also 4 physical
+the end is only reachable if everything before it also ran. There are also 5 physical
 plate hops that no amount of decoding removes -- only a plate mover does.
+
+`broken` is its own row on purpose. The Tecan plate reader's absorbance run card is
+written and was run on the instrument, where it fails deterministically: `TimeoutError`
+on `ABSOLUTE MTP,Y=`, 2 of 2, and the reader has never returned an OD matrix. Calling that
+`manual` would say "someone writes and proves that script first", which is false, and it
+would make a known defect look like unwritten work. One means do reverse-engineering; the
+other means debug a real failure. A planner needs to know which.
 
 The reason the numbers are this low is the honest one. Across all six reverse-engineered
 instruments, **0 of 54 seeded commands are decoded**. Not one of them can be driven
@@ -76,7 +84,7 @@ $ autonomous-lab doctor --plr-tested ../plr-tested
   [ok  ] star.pta_wga_lysis  run card exists: hamilton-star/starlab_live/00_pta_wga_1col_src1lysis_src3rxn_dst1_hhs_DRY.py
   [ok  ] star.pta_wga_lysis  confirm token appears in the run card: RUN_SINGLE_COL_PTA_HHS
   ...
-  all 12 checkable claims hold.
+  all 16 checkable claims hold.
 ```
 
 For every operation this package calls validated, `doctor` confirms the run card really
@@ -125,6 +133,10 @@ package knows about but your plr-re does not costs out as unavailable rather tha
 - `small_molecule_qc` -- VIAFLO 96 serial dilution, Biotage V-10 solvent removal, Agilent
   6530 Q-TOF LC/MS.
 
+The genomics one quantifies the library on the plate reader before it pools and sequences,
+because that is what you actually do, and because skipping it would score better and be
+worth less.
+
 Both are written to be unflattering. They include the cartridge seating and the flow-cell
 loading that a demo would quietly omit, because a plan that skipped them would produce a
 better number and be worth nothing.
@@ -152,7 +164,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-41 device-free tests. The ones that matter most try to make the ledger lie: claim a step
+46 device-free tests. The ones that matter most try to make the ledger lie: claim a step
 is automated when its command is undecoded, claim a decoded command is runnable while its
 siblings are not, claim a federated leg runs when no run card was ever proven for it. The
 doctor tests prove the checker itself catches a renamed run card and a stale token,

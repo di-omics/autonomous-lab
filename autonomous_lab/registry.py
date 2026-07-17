@@ -17,7 +17,7 @@ di-omics/plr-tested. They are reached over a run card, not a ProtocolMap.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
 from plr_re.protocolmap import DEFAULT_TRANSPORT, DEVICE_NAMES, SEEDS, Transport
@@ -93,6 +93,11 @@ class FederatedSpec:
   entry: str
   validated: str
   validated_ops: Dict[str, ValidatedRun]
+  # Operations whose run card exists and FAILED on the instrument. Recorded rather than
+  # omitted: a step nobody wrote and a step that was written, run, and did not work are
+  # different facts, and leaving the second out would quietly flatter the lab by making a
+  # known defect look like unwritten work.
+  known_failures: Dict[str, ValidatedRun] = field(default_factory=dict)
   note: str = ""
 
 
@@ -262,6 +267,56 @@ FEDERATED: Dict[str, FederatedSpec] = {
     note=(
       "The choreography never closes the ODTC door around the thermal leg, which is not "
       "a thermally sound way to run a real PCR. ampseq-pcr2 has never run."
+    ),
+  ),
+  "tecan": FederatedSpec(
+    key="tecan",
+    device="Tecan Infinite 200 PRO",
+    role=Role.ANALYTICAL,
+    repo="di-omics/plr-tested",
+    entry="instrument-integrations/run_on_pi.sh",
+    validated=(
+      "Bring-up and tray cycling passed on the instrument. The absorbance read did not: "
+      "it fails deterministically, and the reader has never returned an OD matrix."
+    ),
+    validated_ops={
+      "bringup": ValidatedRun(
+        script="instrument-integrations/tecan-infinite/02_tecan_bringup.py",
+        confirm_token=None,
+        evidence=(
+          "setup() and INIT FORCE completed, stage homed, driver ready, on starpi2 "
+          "2026-07-16; note this unit rejects ABS #BEAM DIAMETER with ERR1, so the "
+          "absorbance path runs on a hardcoded 700 fallback rather than a value the "
+          "reader gave it"
+        ),
+      ),
+      "tray_cycle": ValidatedRun(
+        script="instrument-integrations/tecan-infinite/03_tecan_tray.py",
+        confirm_token=None,
+        evidence=(
+          "five clean cycles on starpi2 2026-07-16; close stable at 3.6 s, open bimodal "
+          "3.2 s vs 5.3 s and tracking the stage's start position rather than the plate, "
+          "so budget the worst case for an iSWAP handoff"
+        ),
+      ),
+    },
+    known_failures={
+      "read_absorbance": ValidatedRun(
+        script="instrument-integrations/tecan-infinite/04_tecan_read_absorbance.py",
+        confirm_token=None,
+        evidence=(
+          "FAILED on the instrument from starpi2 2026-07-16: TimeoutError reading USB, "
+          "raised in driver.py run_scan on 'ABSOLUTE MTP,Y=<y_stage>', deterministic 2 of "
+          "2. setup() and the tray succeed in the same run, so the reader is talking and "
+          "its drawer obeys; the Y-stage command is simply never answered. No wells, no "
+          "OD matrix. Distinct from the older 20-byte calibration-frame decode bug, and "
+          "not yet explained: it differs by Pi with an identical environment"
+        ),
+      ),
+    },
+    note=(
+      "Runs from an isolated venv: VENV=/home/lab/tecan-lab/env. The reader has never "
+      "read a plate. Do not describe it as working."
     ),
   ),
   "hhs": FederatedSpec(

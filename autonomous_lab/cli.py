@@ -19,6 +19,7 @@ from typing import List
 from .doctor import check_federated, render as render_checks
 from .executor import Executor
 from .ledger import build_ledger, rank_unlocks
+from .model import Verdict
 from .registry import FEDERATED, registry
 from .workcell import Workcell
 from . import protocols
@@ -62,6 +63,10 @@ def _stock(args) -> int:
     print(f"    entry        {f.entry}")
     print(f"    validated    {f.validated}")
     print(f"    run cards    {', '.join(sorted(f.validated_ops)) or 'none'}")
+    if f.known_failures:
+      # Surfaced, never omitted: a run card that exists and fails is a fact about this
+      # lab, and hiding it would make a known defect look like unwritten work.
+      print(f"    FAILED       {', '.join(sorted(f.known_failures))}")
     if f.note:
       print(f"    note         {f.note}")
   return 0
@@ -83,10 +88,10 @@ def _ledger(args) -> int:
     print(f"  {i:2d}. {row.verdict.value.upper():<10} {row.step.instrument:<14} {row.step.summary}")
     print(f"      {row.reason}")
   counts = ledger.counts()
-  print(
-    f"\n  automated {counts['automated']}  supervised {counts['supervised']}  "
-    f"blocked {counts['blocked']}  manual {counts['manual']}   (of {len(ledger.rows)})"
-  )
+  # Print every verdict, so the row counts always sum to the step count. A tally that
+  # quietly dropped a category would be the exact failure this tool exists to prevent.
+  tally = "  ".join(f"{name} {counts[name]}" for name in (v.value for v in Verdict))
+  print(f"\n  {tally}   (of {len(ledger.rows)})")
   print(f"  autonomy         {100 * ledger.autonomy():.0f}%  (steps that run headless today)")
   print(f"  reachable        {100 * ledger.reachable():.0f}%  (incl. steps a human supervises)")
   print(

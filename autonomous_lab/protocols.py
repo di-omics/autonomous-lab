@@ -31,6 +31,7 @@ ARTIFACTS: Dict[str, Artifact] = {
   "pcr1_plate": Artifact("pcr1_plate", physical=True, note="post ampseq PCR1"),
   "library_plate": Artifact("library_plate", physical=True, note="indexed, poolable"),
   "flow_cell": Artifact("flow_cell", physical=True, note="loaded by hand with reagents"),
+  "library_quant": Artifact("library_quant", note="OD/concentration per well; data, not material"),
   "run_folder": Artifact("run_folder", note="AvitiOS output folder; data, not material"),
   "run_outcome": Artifact("run_outcome", note="running/complete + outcome, read off the folder"),
   "source_plate": Artifact("source_plate", physical=True, note="compound plate"),
@@ -113,6 +114,17 @@ SINGLE_CELL_GENOMICS = Protocol(
       consumes=("pcr1_plate",),
       produces=("library_plate",),
     ),
+    # You do not pool and sequence a library you have not quantified. This step is here
+    # because a protocol that skipped it would produce a better autonomy number and be
+    # worth less: the reader is the one instrument in this lab that has been driven and
+    # still cannot do its actual job.
+    Step(
+      instrument="tecan",
+      op="read_absorbance",
+      summary="quantify the pooled library before committing a flow cell",
+      consumes=("library_plate",),
+      produces=("library_quant",),
+    ),
     Step(
       instrument="element_aviti",
       op=ZeroDecodeOp.PROBE_HTTP.value,
@@ -129,7 +141,7 @@ SINGLE_CELL_GENOMICS = Protocol(
       instrument="element_aviti",
       op="upload_manifest",
       summary="stage the RunManifest.csv for the pooled library",
-      consumes=("library_plate", "flow_cell"),
+      consumes=("library_plate", "flow_cell", "library_quant"),
     ),
     Step(
       instrument="element_aviti",

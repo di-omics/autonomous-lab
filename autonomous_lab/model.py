@@ -36,8 +36,16 @@ class Tier(str, Enum):
 
 
 class Verdict(str, Enum):
-  """What a step can actually do right now. Ordered worst to best by autonomy."""
+  """What a step can actually do right now. Ordered worst to best by autonomy.
 
+  BROKEN and MANUAL are deliberately separate, and the Tecan plate reader is why. Its
+  absorbance run card exists and was run on the instrument, where it failed
+  deterministically. Calling that manual would say "someone writes and proves that script
+  first", which is false: the script is written. A planner needs to know which it is,
+  because one means do reverse-engineering and the other means debug a real failure.
+  """
+
+  BROKEN = "broken"  # a run card exists, ran on the instrument, and failed
   MANUAL = "manual"  # no code path at all; a human does it at the bench
   BLOCKED = "blocked"  # code path exists but a required command is undecoded
   SUPERVISED = "supervised"  # real hardware execution, gated on a human confirm token

@@ -397,3 +397,60 @@ def test_workcell_rejects_an_unknown_instrument(tmp_path):
   path.write_text('{"name": "x", "instruments": {"not_a_box": {}}}', encoding="utf-8")
   with pytest.raises(KeyError):
     Workcell.from_json(str(path))
+
+
+# -- known failures ------------------------------------------------------------
+
+
+def test_a_run_card_that_failed_on_hardware_is_broken_not_manual():
+  """The Tecan case. Its absorbance run card is written and was run; it times out every
+  time. Calling that manual would say "someone writes that script first", which is false,
+  and would make a known defect look like unwritten work."""
+  wc = Workcell.default()
+  wc.plr_tested_root = "/somewhere/plr-tested"
+  v = cost_step(Step(instrument="tecan", op="read_absorbance", summary="x"), wc)
+  assert v.verdict is Verdict.BROKEN
+  assert v.verdict.headless is False
+  assert "FAILED on the instrument" in v.reason
+  assert "TimeoutError" in v.reason
+
+
+def test_the_tecan_reader_is_never_reported_as_working():
+  """Standing rule for this instrument: it has never read a plate. No verdict anywhere may
+  imply otherwise."""
+  wc = Workcell.default()
+  wc.plr_tested_root = "/somewhere/plr-tested"
+  for op in ("read_absorbance",):
+    v = cost_step(Step(instrument="tecan", op=op, summary="x"), wc)
+    assert v.verdict in (Verdict.BROKEN, Verdict.MANUAL)
+    assert v.verdict is not Verdict.AUTOMATED
+    assert v.verdict is not Verdict.SUPERVISED
+
+
+def test_tecan_bringup_and_tray_are_supervised_because_they_did_pass():
+  """The other half of honesty: bring-up and the tray really did pass on the instrument,
+  so under-reporting them would be its own inaccuracy."""
+  wc = Workcell.default()
+  wc.plr_tested_root = "/somewhere/plr-tested"
+  for op in ("bringup", "tray_cycle"):
+    v = cost_step(Step(instrument="tecan", op=op, summary="x"), wc)
+    assert v.verdict is Verdict.SUPERVISED, op
+
+
+def test_counts_cover_every_verdict_so_the_tally_sums():
+  """A tally that dropped a category would be the exact failure this tool prevents."""
+  ledger = build_ledger(protocols.get("single_cell_genomics"))
+  assert sum(ledger.counts().values()) == len(ledger.rows)
+  assert set(ledger.counts()) == {v.value for v in Verdict}
+
+
+def test_the_library_is_quantified_before_it_is_sequenced():
+  """A protocol that pooled and sequenced without quantifying would score better and be
+  worth less."""
+  p = protocols.get("single_cell_genomics")
+  ops = [s.op for s in p.steps]
+  quant = next(s for s in p.steps if s.instrument == "tecan")
+  assert "library_quant" in quant.produces
+  manifest = next(s for s in p.steps if s.op == "upload_manifest")
+  assert "library_quant" in manifest.consumes
+  assert ops.index("read_absorbance") < ops.index("upload_manifest")
