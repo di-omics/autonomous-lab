@@ -48,21 +48,42 @@ class InstrumentSpec:
 
 
 @dataclass(frozen=True)
+class ValidatedRun:
+  """One operation an operator has actually watched run, and the run card that does it.
+
+  Every field here is checkable against a plr-tested checkout, and `autonomous-lab doctor`
+  checks them. That is the point. The instrument registry is derived from SEEDS so it
+  cannot drift; these claims are hand-written, so without a checker they are exactly the
+  kind of assertion this package refuses to accept from anyone else. `doctor` closes that
+  gap: it confirms the script is really there and the token really appears in it.
+
+  `evidence` is what an operator attested, quoted narrowly and including the caveats. It
+  is prose and cannot be verified by a machine, so it stays small and specific.
+  """
+
+  script: str  # path relative to the plr-tested checkout root
+  confirm_token: Optional[str]  # the motion gate for THIS script; None if it has no gate
+  evidence: str
+  plan_flag: Optional[str] = None  # introspection that touches nothing, where one exists
+
+
+@dataclass(frozen=True)
 class FederatedSpec:
   """An instrument driven from another repo that has already run it on hardware.
 
   `entry` is a run card, not an API: plr-tested's own README is explicit that the seam is
   `run_on_pi.sh <script> [args]`, which rsyncs the working tree to the Pi and runs it in
-  a venv. `plan_flag` is the introspection seam that touches nothing; `confirm_token` is
-  the motion gate.
+  a venv.
 
   `validated_ops` is the load-bearing field and it is deliberately narrow: it maps an
-  operation to what an operator has ACTUALLY watched that operation do on the instrument.
-  An operation absent from it costs out as manual, however capable the instrument is. The
-  distinction matters because "the STAR is validated" is not a claim about any particular
-  step: plr-tested has a validated whole-genome sequencing addition and a validated targeted PCR choreography,
-  and no validated bead cleanup or library pooling at all. Letting a step inherit the
-  instrument's reputation is exactly the overclaim this layer exists to prevent.
+  operation to the specific run card that has been proven for it. An operation absent from
+  it costs out as manual, however capable the instrument is. The distinction matters
+  because "the STAR is validated" is not a claim about any particular step: plr-tested has
+  a validated whole-genome sequencing addition and a validated targeted PCR choreography, and its validation
+  tables say nothing about bead cleanup or library pooling. Scripts for those exist in the
+  tree, which is not the same thing and is why existence is never the test here. Letting a
+  step inherit the instrument's reputation is exactly the overclaim this package exists to
+  prevent.
   """
 
   key: str
@@ -70,10 +91,8 @@ class FederatedSpec:
   role: Role
   repo: str
   entry: str
-  plan_flag: Optional[str]
-  confirm_token: Optional[str]
   validated: str
-  validated_ops: Dict[str, str]
+  validated_ops: Dict[str, ValidatedRun]
   note: str = ""
 
 
@@ -188,22 +207,34 @@ FEDERATED: Dict[str, FederatedSpec] = {
     role=Role.LIQUID_HANDLING,
     repo="di-omics/plr-tested",
     entry="hamilton-star/run_on_pi.sh",
-    plan_flag="--plan",
-    confirm_token="RUN_AMPSEQ_ODTC_LIDDED_FULL",
     validated=(
       "Safe init, PTA/WGA single-column and full-plate dry, iSWAP lid moves, and the "
       "lidded ampseq choreography: 13 motion legs, 22 SUCCESS, 0 failures, deck "
       "self-returned to start."
     ),
     validated_ops={
-      "pta_wga_lysis": (
-        "single-column and full-plate DRY, lysis 3.0 uL and reaction 6.0 uL; the wet "
-        "single addition is written but has never run"
+      "pta_wga_lysis": ValidatedRun(
+        script="hamilton-star/starlab_live/00_pta_wga_1col_src1lysis_src3rxn_dst1_hhs_DRY.py",
+        confirm_token="RUN_SINGLE_COL_PTA_HHS",
+        evidence=(
+          "single-column DRY: lysis 3.0 uL source col1 to dest col1, reaction 6.0 uL "
+          "source col3 to dest col1; the wet single addition is written but has never run"
+        ),
       ),
-      "ampseq_choreography": (
-        "13 motion legs, 22 SUCCESS, 0 failures, deck self-returned; dry"
+      "ampseq_choreography": ValidatedRun(
+        script="hamilton-star/starlab_live/run_ampseq_odtc_LIDDED_1col_full_thermocycle.py",
+        confirm_token="RUN_AMPSEQ_ODTC_LIDDED_FULL",
+        evidence=(
+          "13 motion legs, 22 SUCCESS, 0 failures, deck self-returned to start; dry, and "
+          "--thermocycle was stopped in pre-warm on purpose rather than run to completion"
+        ),
+        plan_flag="--plan",
       ),
-      "iswap_lid_move": "rail35 pos0 to HHS rail27 pos2 and return, 6 of 6 clean",
+      "iswap_lid_move": ValidatedRun(
+        script="hamilton-star/starlab_live/test_iswap_lid_variable.py",
+        confirm_token="RUN_LID_MOVE",
+        evidence="lid on and de-lid confirmed between rail35 pos4 and pos0",
+      ),
     },
     note="Dry runs only. A wet run of the full choreography is still owed.",
   ),
@@ -213,17 +244,19 @@ FEDERATED: Dict[str, FederatedSpec] = {
     role=Role.THERMAL,
     repo="di-omics/plr-tested",
     entry="instrument-integrations/run_on_pi.sh",
-    plan_flag=None,
-    confirm_token=None,
     validated=(
       "Bring-up, hold to 45.00 C, cycling to 50.00 C, and ampseq-pcr1: 30 real cycles, "
       "36.6 min, mean 0.27 C setpoint error."
     ),
     validated_ops={
-      "ampseq_pcr1": (
-        "30 real cycles on the instrument, 36.6 min, mean 0.27 C setpoint error; note "
-        "98 C denaturation grazes the 99 C block ceiling, and the choreography does not "
-        "close the door around the thermal leg"
+      "ampseq_pcr1": ValidatedRun(
+        script="instrument-integrations/odtc/05_odtc_run_protocol.py",
+        confirm_token=None,
+        evidence=(
+          "30 real cycles on the instrument, 36.6 min, mean 0.27 C setpoint error; note "
+          "98 C denaturation grazes the 99 C block ceiling, and the choreography does "
+          "not close the door around the thermal leg"
+        ),
       ),
     },
     note=(
@@ -237,11 +270,13 @@ FEDERATED: Dict[str, FederatedSpec] = {
     role=Role.THERMAL,
     repo="di-omics/plr-tested",
     entry="hamilton-star/run_on_pi.sh",
-    plan_flag=None,
-    confirm_token=None,
     validated="iSWAP handoff to the HHS and return, 6/6 repeatability.",
     validated_ops={
-      "iswap_to_hhs": "6 of 6 transfers clean, pickup landed at z 0.950 every time",
+      "iswap_to_hhs": ValidatedRun(
+        script="hamilton-star/starlab_live/test_iswap_plate_rail35pos0_to_rail27_variable.py",
+        confirm_token="RUN_ISWAP_PLATE_TEST",
+        evidence="6 of 6 transfers clean, pickup landed at z 0.950 every time",
+      ),
     },
     note="Driven over the STAR TCC bus, so it shares the STAR's one-process constraint.",
   ),

@@ -20,6 +20,7 @@ pip install 'autonomous-lab @ git+https://github.com/di-omics/autonomous-lab'
 autonomous-lab stock                          # every instrument, its role, how far its map is
 autonomous-lab ledger single_cell_genomics    # cost a protocol step by step
 autonomous-lab gaps                           # the RE queue, ranked by steps freed
+autonomous-lab doctor --plr-tested ../plr-tested   # check my claims against your checkout
 autonomous-lab run single_cell_genomics       # run it as far as it honestly goes
 ```
 
@@ -62,6 +63,32 @@ Ranked by instrument, not by command, and that is forced by the code rather than
 presentation choice: plr-re's coverage gate is all-or-nothing across a map, so decoding a
 single command frees exactly zero steps. The unit of progress is a finished map, and a
 per-command queue would be advice nobody could act on.
+
+## Don't take my word for the hardware claims
+
+The instrument registry is derived from `SEEDS`, so it cannot drift. The federated claims
+have no such luxury: `validated_ops` is hand-written paths and prose about a repo this one
+does not control, which makes it exactly the kind of assertion this package refuses to
+accept from anybody else. So it ships a checker.
+
+```
+$ autonomous-lab doctor --plr-tested ../plr-tested
+  [ok  ] star.pta_wga_lysis  run card exists: hamilton-star/starlab_live/00_pta_wga_1col_src1lysis_src3rxn_dst1_hhs_DRY.py
+  [ok  ] star.pta_wga_lysis  confirm token appears in the run card: RUN_SINGLE_COL_PTA_HHS
+  ...
+  all 12 checkable claims hold.
+```
+
+For every operation this package calls validated, `doctor` confirms the run card really
+exists at that path in your plr-tested checkout, and that the confirm token the ledger
+tells you to type really appears in that script. It exits non-zero on drift. This caught a
+real bug during development: every STAR step was citing `RUN_AMPSEQ_ODTC_LIDDED_FULL`,
+when the whole-genome sequencing run card actually gates on `RUN_SINGLE_COL_PTA_HHS`. The ledger was
+telling an operator to type a token that would have refused the run.
+
+What it deliberately **cannot** check is `evidence` -- whether an operator really watched
+the thing run. That is prose about the physical world and no checker reaches it, which is
+why the evidence strings stay narrow and carry their own caveats.
 
 ## Three things it refuses to do
 
@@ -125,6 +152,8 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-35 device-free tests. The ones that matter most try to make the ledger lie: claim a step
+41 device-free tests. The ones that matter most try to make the ledger lie: claim a step
 is automated when its command is undecoded, claim a decoded command is runnable while its
-siblings are not, claim a federated leg runs when no run card was ever proven for it.
+siblings are not, claim a federated leg runs when no run card was ever proven for it. The
+doctor tests prove the checker itself catches a renamed run card and a stale token,
+because a checker that passed unconditionally would just launder the assertion.
