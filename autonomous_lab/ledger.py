@@ -80,6 +80,18 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
         f"{fed.device} runs from {fed.repo}, but the workcell does not say where it is "
         "checked out (set plr_tested_root)",
       )
+    # A run card that exists and failed on the instrument is not unwritten work, and
+    # saying "someone writes and proves that script first" about it would be false. The
+    # Tecan's absorbance read is the case: written, run, and it times out every time.
+    if step.op in fed.known_failures:
+      run = fed.known_failures[step.op]
+      return StepVerdict(
+        step,
+        Verdict.BROKEN,
+        Tier.FEDERATED,
+        f"the run card {run.script} exists and FAILED on the instrument: {run.evidence}",
+      )
+
     # An instrument's reputation does not transfer to an arbitrary step. plr-tested has a
     # validated whole-genome sequencing addition and a validated targeted PCR choreography; it has no validated
     # bead cleanup and no validated library pooling. A step with no run card of its own is

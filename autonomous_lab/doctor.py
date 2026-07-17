@@ -78,20 +78,26 @@ def check_federated(plr_tested_root: str) -> List[Check]:
       )
     )
 
-    for op in sorted(fed.validated_ops):
-      run = fed.validated_ops[op]
+    # Known failures are checked exactly like validated ops. The claim "this exists and
+    # fails" also rots: if the script is gone, the ledger is reporting a defect in code
+    # nobody has, which is its own kind of wrong.
+    claims = [(op, run, "validated") for op, run in fed.validated_ops.items()]
+    claims += [(op, run, "known failure") for op, run in fed.known_failures.items()]
+
+    for op, run, kind in sorted(claims):
       script_path = os.path.join(root, run.script)
       exists = os.path.isfile(script_path)
       out.append(
         Check(
           instrument=key,
           op=op,
-          claim=f"run card exists: {run.script}",
+          claim=f"run card exists ({kind}): {run.script}",
           ok=exists,
           detail=(
-            f"this package says {key}.{op} is validated by {run.script}, but there is no "
-            f"file at {script_path}. Either it was renamed in {fed.repo} or the claim is "
-            "wrong; until it resolves, the ledger is citing a run card nobody can run."
+            f"this package cites {run.script} as the {kind} run card for {key}.{op}, but "
+            f"there is no file at {script_path}. Either it was renamed in {fed.repo} or "
+            "the claim is wrong; until it resolves, the ledger is citing a run card "
+            "nobody can run."
           ),
         )
       )
