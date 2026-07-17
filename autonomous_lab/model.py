@@ -38,15 +38,17 @@ class Tier(str, Enum):
 class Verdict(str, Enum):
   """What a step can actually do right now. Ordered worst to best by autonomy.
 
-  BROKEN and MANUAL are deliberately separate, and the Tecan plate reader is why. Its
-  absorbance run card exists and was run on the instrument, where it failed
-  deterministically. Calling that manual would say "someone writes and proves that script
-  first", which is false: the script is written. A planner needs to know which it is,
-  because one means do reverse-engineering and the other means debug a real failure.
+  Three of these look similar and are not, which is the point. A step with no script is
+  MANUAL. A step whose script exists and runs dry but has never touched the instrument is
+  WRITTEN. A step whose script exists and FAILED on the instrument is BROKEN. The Tecan
+  reader (BROKEN) and the STAR bead-cleanup (WRITTEN) are both a long way from "someone
+  writes that script first" -- one needs a debug, the other needs a wet validation run --
+  and a planner has to know which, because the next action differs.
   """
 
   BROKEN = "broken"  # a run card exists, ran on the instrument, and failed
   MANUAL = "manual"  # no code path at all; a human does it at the bench
+  WRITTEN = "written"  # a run card exists and runs dry, but has never run on the instrument
   BLOCKED = "blocked"  # code path exists but a required command is undecoded
   SUPERVISED = "supervised"  # real hardware execution, gated on a human confirm token
   AUTOMATED = "automated"  # runs headless today, no human, no decoding

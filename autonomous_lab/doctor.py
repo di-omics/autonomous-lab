@@ -83,6 +83,7 @@ def check_federated(plr_tested_root: str) -> List[Check]:
     # nobody has, which is its own kind of wrong.
     claims = [(op, run, "validated") for op, run in fed.validated_ops.items()]
     claims += [(op, run, "known failure") for op, run in fed.known_failures.items()]
+    claims += [(op, run, "written") for op, run in fed.written_ops.items()]
 
     for op, run, kind in sorted(claims):
       script_path = os.path.join(root, run.script)
