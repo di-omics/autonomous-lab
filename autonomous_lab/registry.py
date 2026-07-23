@@ -79,7 +79,7 @@ class FederatedSpec:
   operation to the specific run card that has been proven for it. An operation absent from
   it costs out as manual, however capable the instrument is. The distinction matters
   because "the STAR is validated" is not a claim about any particular step: plr-tested has
-  a validated whole-genome sequencing addition and a validated targeted PCR choreography, and its validation
+  a validated PTA/WGA addition and a validated targeted PCR choreography, and its validation
   tables say nothing about bead cleanup or library pooling. Scripts for those exist in the
   tree, which is not the same thing and is why existence is never the test here. Letting a
   step inherit the instrument's reputation is exactly the overclaim this package exists to
@@ -219,7 +219,7 @@ FEDERATED: Dict[str, FederatedSpec] = {
     entry="hamilton-star/run_on_pi.sh",
     validated=(
       "Safe init, PTA/WGA single-column and full-plate dry, iSWAP lid moves, and the "
-      "lidded ampseq choreography: 13 motion legs, 22 SUCCESS, 0 failures, deck "
+      "lidded targeted PCR choreography: 13 motion legs, 22 SUCCESS, 0 failures, deck "
       "self-returned to start."
     ),
     validated_ops={
@@ -231,13 +231,13 @@ FEDERATED: Dict[str, FederatedSpec] = {
           "source col3 to dest col1; the wet single addition is written but has never run"
         ),
       ),
-      "ampseq_choreography": ValidatedRun(
-        script="hamilton-star/starlab_live/run_ampseq_odtc_LIDDED_1col_full_dry.py",
-        confirm_token="RUN_AMPSEQ_ODTC_LIDDED_FULL",
+      "targeted_pcr_choreography": ValidatedRun(
+        script="hamilton-star/starlab_live/run_targeted_pcr_odtc_LIDDED_1col_full_dry.py",
+        confirm_token="RUN_TARGETED_PCR_ODTC_LIDDED_FULL",
         evidence=(
           "the LIDDED choreography (9 motion legs plus 4 lid legs around the ODTC trip), "
           "clean on the instrument, deck self-returned to start; dry, tag "
-          "ampseq-lidded-inwellmix-2026-07-16. A real thermal cycle inside it has not run"
+          "targeted-pcr-lidded-inwellmix-2026-07-16. A real thermal cycle inside it has not run"
         ),
       ),
       "iswap_lid_move": ValidatedRun(
@@ -247,8 +247,8 @@ FEDERATED: Dict[str, FederatedSpec] = {
       ),
     },
     written_ops={
-      "ampseq_pcr1_cleanup": ValidatedRun(
-        script="hamilton-star/starlab_live/02_ampseq_pcr1_cleanup_col1_dry_v2_p50low.py",
+      "targeted_pcr_round1_cleanup": ValidatedRun(
+        script="hamilton-star/starlab_live/02_targeted_pcr_round1_cleanup_col1_dry_v2_p50low.py",
         confirm_token=None,
         evidence=(
           "full SPRI bead-clean state machine (beads, 2x ethanol, elution), 0.9X on 25 uL "
@@ -267,11 +267,11 @@ FEDERATED: Dict[str, FederatedSpec] = {
     repo="di-omics/plr-tested",
     entry="instrument-integrations/run_on_pi.sh",
     validated=(
-      "Bring-up, hold to 45.00 C, cycling to 50.00 C, and ampseq-pcr1: 30 real cycles, "
+      "Bring-up, hold to 45.00 C, cycling to 50.00 C, and targeted-pcr-round-1: 30 real cycles, "
       "36.6 min, mean 0.27 C setpoint error."
     ),
     validated_ops={
-      "ampseq_pcr1": ValidatedRun(
+      "targeted_pcr_round1": ValidatedRun(
         script="instrument-integrations/odtc/05_odtc_run_protocol.py",
         confirm_token=None,
         evidence=(
@@ -283,7 +283,7 @@ FEDERATED: Dict[str, FederatedSpec] = {
     },
     note=(
       "The choreography never closes the ODTC door around the thermal leg, which is not "
-      "a thermally sound way to run a real PCR. ampseq-pcr2 has never run."
+      "a thermally sound way to run a real PCR. targeted-pcr-round-2 has never run."
     ),
   ),
   "tecan": FederatedSpec(

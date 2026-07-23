@@ -107,7 +107,7 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
       )
 
     # An instrument's reputation does not transfer to an arbitrary step. plr-tested has a
-    # validated whole-genome sequencing addition and a validated targeted PCR choreography; it has no validated
+    # validated PTA/WGA addition and a validated targeted PCR choreography; it has no validated
     # bead cleanup and no validated library pooling. A step with no run card of its own is
     # something a human still does, and calling it supervised because it happens to name
     # the STAR would be precisely the overclaim this layer exists to prevent.

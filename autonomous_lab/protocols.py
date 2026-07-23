@@ -28,7 +28,7 @@ ARTIFACTS: Dict[str, Artifact] = {
   "sorted_plate": Artifact("sorted_plate", physical=True, note="96-well, one cell per well"),
   "lysate_plate": Artifact("lysate_plate", physical=True, note="lysed, ready for amplification"),
   "amplified_plate": Artifact("amplified_plate", physical=True, note="post PTA/WGA"),
-  "pcr1_plate": Artifact("pcr1_plate", physical=True, note="post ampseq PCR1"),
+  "pcr1_plate": Artifact("pcr1_plate", physical=True, note="post targeted PCR round 1"),
   "library_plate": Artifact("library_plate", physical=True, note="indexed, poolable"),
   "flow_cell": Artifact("flow_cell", physical=True, note="loaded by hand with reagents"),
   "library_quant": Artifact("library_quant", note="OD/concentration per well; data, not material"),
@@ -49,7 +49,7 @@ ARTIFACTS: Dict[str, Artifact] = {
 SINGLE_CELL_GENOMICS = Protocol(
   name="single_cell_genomics",
   summary=(
-    "Single cells to sequencing outcome: Namocell sort, STAR PTA/WGA, ODTC ampseq PCR1, "
+    "Single cells to sequencing outcome: Namocell sort, STAR PTA/WGA, ODTC targeted PCR round 1, "
     "STAR library prep, AVITI sequencing, run-folder readout."
   ),
   artifacts=tuple(ARTIFACTS.values()),
@@ -95,14 +95,14 @@ SINGLE_CELL_GENOMICS = Protocol(
     ),
     Step(
       instrument="odtc",
-      op="ampseq_pcr1",
+      op="targeted_pcr_round1",
       summary="30-cycle amplification (validated: 36.6 min, mean 0.27 C setpoint error)",
       consumes=("lysate_plate",),
       produces=("amplified_plate",),
     ),
     Step(
       instrument="star",
-      op="ampseq_pcr1_cleanup",
+      op="targeted_pcr_round1_cleanup",
       summary="magnetic bead cleanup and index addition",
       consumes=("amplified_plate",),
       produces=("pcr1_plate",),
