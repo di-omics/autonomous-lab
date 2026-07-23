@@ -241,7 +241,7 @@ def test_federated_step_without_a_validated_run_card_is_manual():
 
 def test_supervised_reason_carries_the_actual_validation_record():
   """A supervised verdict must say what was actually watched, including the caveats: the
-  PTA/WGA leg is dry-validated and its wet form has never run."""
+  whole-genome sequencing leg is dry-validated and its wet form has never run."""
   wc = Workcell.default()
   wc.plr_tested_root = "/somewhere/plr-tested"
   v = cost_step(Step(instrument="star", op="pta_wga_lysis", summary="x"), wc)
