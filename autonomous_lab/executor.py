@@ -133,6 +133,15 @@ _GAP_CLOSERS: Dict[str, str] = {
 }
 
 
+def gap_closer(instrument: str) -> str:
+  """The bench work that would unblock this instrument, or "" if none is recorded.
+
+  Public because the permission layer hands the same text to a human on a refusal card,
+  and a handoff that says "decode the protocol" helps nobody standing at a bench.
+  """
+  return _GAP_CLOSERS.get(instrument, "")
+
+
 class Executor:
   """Runs a protocol as far as it honestly goes.
 
