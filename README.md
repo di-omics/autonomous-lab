@@ -81,8 +81,8 @@ accept from anybody else. So it ships a checker.
 
 ```
 $ autonomous-lab doctor --plr-tested ../plr-tested
-  [ok  ] star.pta_wga_lysis  run card exists: hamilton-star/starlab_live/00_pta_wga_1col_src1lysis_src3rxn_dst1_hhs_DRY.py
-  [ok  ] star.pta_wga_lysis  confirm token appears in the run card: RUN_SINGLE_COL_PTA_HHS
+  [ok  ] star.wgs_prep_lysis  run card exists: hamilton-star/starlab_live/00_wgs_prep_1col_src1lysis_src3rxn_dst1_hhs_DRY.py
+  [ok  ] star.wgs_prep_lysis  confirm token appears in the run card: RUN_SINGLE_COL_WGS_PREP_HHS
   ...
   all 16 checkable claims hold.
 ```
@@ -90,8 +90,8 @@ $ autonomous-lab doctor --plr-tested ../plr-tested
 For every operation this package calls validated, `doctor` confirms the run card really
 exists at that path in your plr-tested checkout, and that the confirm token the ledger
 tells you to type really appears in that script. It exits non-zero on drift. This caught a
-real bug during development: every STAR step was citing `RUN_TARGETED_PCR_ODTC_LIDDED_FULL`,
-when the PTA/WGA run card actually gates on `RUN_SINGLE_COL_PTA_HHS`. The ledger was
+real bug during development: every STAR step was citing `RUN_PCR_ENRICHMENT_ODTC_LIDDED_FULL`,
+when the whole-genome sequencing preparation run card actually gates on `RUN_SINGLE_COL_WGS_PREP_HHS`. The ledger was
 telling an operator to type a token that would have refused the run.
 
 What it deliberately **cannot** check is `evidence` -- whether an operator really watched
@@ -101,7 +101,7 @@ why the evidence strings stay narrow and carry their own caveats.
 ## Three things it refuses to do
 
 1. **Let an instrument's reputation transfer to a step.** plr-tested has a validated
-   PTA/WGA addition and a validated targeted PCR choreography; it has no validated bead cleanup
+   whole-genome sequencing preparation addition and a validated PCR enrichment choreography; it has no validated bead cleanup
    and no validated library pooling. So those cost out as manual even though they name a
    validated instrument. A federated step is supervised only when a run card for *that
    step* has been proven. The whole-genome sequencing leg that does count is dry-validated, and the ledger
@@ -128,7 +128,7 @@ package knows about but your plr-re does not costs out as unavailable rather tha
 
 ## Reference protocols
 
-- `single_cell_genomics` -- Namocell sort, STAR PTA/WGA, ODTC targeted PCR round 1, STAR library
+- `single_cell_genomics` -- Namocell sort, STAR whole-genome sequencing preparation, ODTC PCR enrichment round 1, STAR library
   prep, AVITI sequencing, run-folder readout.
 - `small_molecule_qc` -- VIAFLO 96 serial dilution, Biotage V-10 solvent removal, Agilent
   6530 Q-TOF LC/MS.

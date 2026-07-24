@@ -79,7 +79,7 @@ class FederatedSpec:
   operation to the specific run card that has been proven for it. An operation absent from
   it costs out as manual, however capable the instrument is. The distinction matters
   because "the STAR is validated" is not a claim about any particular step: plr-tested has
-  a validated PTA/WGA addition and a validated targeted PCR choreography, and its validation
+  a validated whole-genome sequencing preparation addition and a validated PCR enrichment choreography, and its validation
   tables say nothing about bead cleanup or library pooling. Scripts for those exist in the
   tree, which is not the same thing and is why existence is never the test here. Letting a
   step inherit the instrument's reputation is exactly the overclaim this package exists to
@@ -218,26 +218,27 @@ FEDERATED: Dict[str, FederatedSpec] = {
     repo="di-omics/plr-tested",
     entry="hamilton-star/run_on_pi.sh",
     validated=(
-      "Safe init, PTA/WGA single-column and full-plate dry, iSWAP lid moves, and the "
-      "lidded targeted PCR choreography: 13 motion legs, 22 SUCCESS, 0 failures, deck "
+      "Safe init, whole-genome sequencing preparation single-column and full-plate dry, iSWAP lid moves, and the "
+      "lidded PCR enrichment choreography: 13 motion legs, 22 SUCCESS, 0 failures, deck "
       "self-returned to start."
     ),
     validated_ops={
-      "pta_wga_lysis": ValidatedRun(
-        script="hamilton-star/starlab_live/00_pta_wga_1col_src1lysis_src3rxn_dst1_hhs_DRY.py",
-        confirm_token="RUN_SINGLE_COL_PTA_HHS",
+      "wgs_prep_lysis": ValidatedRun(
+        script="hamilton-star/starlab_live/00_wgs_prep_1col_src1lysis_src3rxn_dst1_hhs_DRY.py",
+        confirm_token="RUN_SINGLE_COL_WGS_PREP_HHS",
         evidence=(
-          "single-column DRY: lysis 3.0 uL source col1 to dest col1, reaction 6.0 uL "
-          "source col3 to dest col1; the wet single addition is written but has never run"
+          "single-column DRY motion coverage for lysis and reaction additions; transfer "
+          "volumes, source mapping, and wet-run parameters are operator-owned inputs not "
+          "recorded in this registry. The wet single addition is written but has never run"
         ),
       ),
-      "targeted_pcr_choreography": ValidatedRun(
-        script="hamilton-star/starlab_live/run_targeted_pcr_odtc_LIDDED_1col_full_dry.py",
-        confirm_token="RUN_TARGETED_PCR_ODTC_LIDDED_FULL",
+      "pcr_enrichment_choreography": ValidatedRun(
+        script="hamilton-star/starlab_live/run_pcr_enrichment_odtc_LIDDED_1col_full_dry.py",
+        confirm_token="RUN_PCR_ENRICHMENT_ODTC_LIDDED_FULL",
         evidence=(
           "the LIDDED choreography (9 motion legs plus 4 lid legs around the ODTC trip), "
           "clean on the instrument, deck self-returned to start; dry, tag "
-          "targeted-pcr-lidded-inwellmix-2026-07-16. A real thermal cycle inside it has not run"
+          "pcr-enrichment-lidded-inwellmix-2026-07-16. A real thermal cycle inside it has not run"
         ),
       ),
       "iswap_lid_move": ValidatedRun(
@@ -247,14 +248,15 @@ FEDERATED: Dict[str, FederatedSpec] = {
       ),
     },
     written_ops={
-      "targeted_pcr_round1_cleanup": ValidatedRun(
-        script="hamilton-star/starlab_live/02_targeted_pcr_round1_cleanup_col1_dry_v2_p50low.py",
+      "pcr_enrichment_round1_cleanup": ValidatedRun(
+        script="hamilton-star/starlab_live/02_pcr_enrichment_round1_cleanup_col1_dry_v2_p50low.py",
         confirm_token=None,
         evidence=(
-          "full SPRI bead-clean state machine (beads, 2x ethanol, elution), 0.9X on 25 uL "
-          "PCR1; dry p50-low motion validated and sim-clean, wired into three end-to-end "
-          "runners as --mode all-dry. Never run wet: README names mock-liquid bead clean "
-          "as the intended next work, and it is still open priority #1"
+          "full bead-clean state machine covering bead addition, wash, and elution "
+          "categories; cleanup ratio, input volume, and reagent settings are operator-owned "
+          "inputs not recorded in this registry. Dry low-volume motion is validated and "
+          "sim-clean, and the operation is wired into end-to-end dry runners. Never run wet: "
+          "mock-liquid bead cleaning remains the intended next work and open priority"
         ),
       ),
     },
@@ -267,23 +269,23 @@ FEDERATED: Dict[str, FederatedSpec] = {
     repo="di-omics/plr-tested",
     entry="instrument-integrations/run_on_pi.sh",
     validated=(
-      "Bring-up, hold to 45.00 C, cycling to 50.00 C, and targeted-pcr-round-1: 30 real cycles, "
-      "36.6 min, mean 0.27 C setpoint error."
+      "Bring-up, hold, cycling, and PCR enrichment thermal execution were observed on hardware; "
+      "method values remain operator-owned and are not recorded in this registry."
     ),
     validated_ops={
-      "targeted_pcr_round1": ValidatedRun(
+      "pcr_enrichment_round1": ValidatedRun(
         script="instrument-integrations/odtc/05_odtc_run_protocol.py",
         confirm_token=None,
         evidence=(
-          "30 real cycles on the instrument, 36.6 min, mean 0.27 C setpoint error; note "
-          "98 C denaturation grazes the 99 C block ceiling, and the choreography does "
-          "not close the door around the thermal leg"
+          "supervised PCR enrichment cycling completed on the instrument; the high-temperature "
+          "setpoint approached the block ceiling, and the choreography does not close the door "
+          "around the thermal leg"
         ),
       ),
     },
     note=(
       "The choreography never closes the ODTC door around the thermal leg, which is not "
-      "a thermally sound way to run a real PCR. targeted-pcr-round-2 has never run."
+      "a thermally sound way to run a real PCR. pcr-enrichment-round-2 has never run."
     ),
   ),
   "tecan": FederatedSpec(
