@@ -8,6 +8,8 @@ those pass, the honesty of every report the layer prints follows from them.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from autonomous_lab import (
@@ -188,7 +190,7 @@ def test_absent_instrument_is_manual():
 
 def test_federated_step_needs_the_seam_wired():
   wc = Workcell.default()  # plr_tested_root is None
-  v = cost_step(Step(instrument="star", op="pta_wga_lysis", summary="x"), wc)
+  v = cost_step(Step(instrument="star", op="wgs_prep_lysis", summary="x"), wc)
   assert v.verdict is Verdict.MANUAL
   assert "plr_tested_root" in v.reason
 
@@ -197,7 +199,7 @@ def test_federated_step_is_supervised_never_automated():
   """Hardware that a human stands next to is not headless, however validated it is."""
   wc = Workcell.default()
   wc.plr_tested_root = "/somewhere/plr-tested"
-  v = cost_step(Step(instrument="star", op="pta_wga_lysis", summary="x"), wc)
+  v = cost_step(Step(instrument="star", op="wgs_prep_lysis", summary="x"), wc)
   assert v.verdict is Verdict.SUPERVISED
   assert v.verdict.headless is False
 
@@ -207,25 +209,25 @@ def test_a_written_but_unrun_script_is_written_not_manual():
   writes that script first" is false; the script exists. But it is not validated either."""
   wc = Workcell.default()
   wc.plr_tested_root = "/somewhere/plr-tested"
-  v = cost_step(Step(instrument="star", op="targeted_pcr_round1_cleanup", summary="x"), wc)
+  v = cost_step(Step(instrument="star", op="pcr_enrichment_round1_cleanup", summary="x"), wc)
   assert v.verdict is Verdict.WRITTEN
   assert v.verdict.headless is False
   assert "runs dry" in v.reason and "never run on" in v.reason
 
 
 def test_written_is_distinct_from_manual_and_supervised():
-  """library_pool has no script (MANUAL); pta_wga_lysis is validated (SUPERVISED);
-  targeted_pcr_round1_cleanup is WRITTEN. Three different facts about the same instrument."""
+  """library_pool has no script (MANUAL); wgs_prep_lysis is validated (SUPERVISED);
+  pcr_enrichment_round1_cleanup is WRITTEN. Three different facts about the same instrument."""
   wc = Workcell.default()
   wc.plr_tested_root = "/somewhere/plr-tested"
   got = {
     op: cost_step(Step(instrument="star", op=op, summary="x"), wc).verdict
-    for op in ("library_pool", "targeted_pcr_round1_cleanup", "pta_wga_lysis")
+    for op in ("library_pool", "pcr_enrichment_round1_cleanup", "wgs_prep_lysis")
   }
   assert got == {
     "library_pool": Verdict.MANUAL,
-    "targeted_pcr_round1_cleanup": Verdict.WRITTEN,
-    "pta_wga_lysis": Verdict.SUPERVISED,
+    "pcr_enrichment_round1_cleanup": Verdict.WRITTEN,
+    "wgs_prep_lysis": Verdict.SUPERVISED,
   }
 
 
@@ -244,8 +246,21 @@ def test_supervised_reason_carries_the_actual_validation_record():
   whole-genome sequencing leg is dry-validated and its wet form has never run."""
   wc = Workcell.default()
   wc.plr_tested_root = "/somewhere/plr-tested"
-  v = cost_step(Step(instrument="star", op="pta_wga_lysis", summary="x"), wc)
+  v = cost_step(Step(instrument="star", op="wgs_prep_lysis", summary="x"), wc)
   assert "DRY" in v.reason and "never run" in v.reason
+
+
+def test_federated_registry_models_categories_not_recipe_values():
+  from autonomous_lab.registry import FEDERATED
+
+  star = FEDERATED["star"]
+  evidence = (
+    star.validated_ops["wgs_prep_lysis"].evidence,
+    star.written_ops["pcr_enrichment_round1_cleanup"].evidence,
+  )
+  assert all("operator-owned inputs" in item for item in evidence)
+  assert all(re.search(r"\b\d+(?:\.\d+)?\s*uL\b", item, re.IGNORECASE) is None for item in evidence)
+  assert re.search(r"\b\d+(?:\.\d+)?X\b", evidence[1], re.IGNORECASE) is None
 
 
 # -- protocols and arithmetic --------------------------------------------------
