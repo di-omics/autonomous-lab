@@ -11,8 +11,13 @@ from __future__ import annotations
 import re
 
 import pytest
+from plr_re.protocolmap import SEEDS, Transport, seed
 
 from autonomous_lab import (
+  FEDERATED,
+  EventKind,
+  EvidenceLedger,
+  EvidenceLevel,
   Executor,
   Step,
   Verdict,
@@ -24,7 +29,6 @@ from autonomous_lab import (
   registry,
 )
 from autonomous_lab.model import Protocol, Tier, ZeroDecodeOp
-from plr_re.protocolmap import SEEDS, Transport, seed
 
 
 def _decoded_map(key, path):
@@ -39,6 +43,27 @@ def _decoded_map(key, path):
   pm.endpoint = "/dev/ttyUSB0@115200"
   pm.to_json(str(path))
   return str(path)
+
+
+def _wired_workcell(tmp_path):
+  """Create the minimum readable checkout needed to make federated claims resolvable."""
+  root = tmp_path / "plr-tested"
+  for fed in FEDERATED.values():
+    entry = root / fed.entry
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text("#!/bin/sh\n", encoding="utf-8")
+    runs = (
+      list(fed.validated_ops.values())
+      + list(fed.written_ops.values())
+      + list(fed.known_failures.values())
+    )
+    for run in runs:
+      script = root / run.script
+      script.parent.mkdir(parents=True, exist_ok=True)
+      script.write_text((run.confirm_token or "") + "\n", encoding="utf-8")
+  wc = Workcell.default()
+  wc.plr_tested_root = str(root)
+  return wc
 
 
 # -- registry ------------------------------------------------------------------
@@ -124,7 +149,8 @@ def test_fully_decoded_map_splits_read_from_actuation(tmp_path):
     key="namocell", map_path=_decoded_map("namocell", tmp_path / "full.json")
   )
   read = cost_step(Step(instrument="namocell", op="get_status", summary="x"), wc)
-  assert read.verdict is Verdict.AUTOMATED
+  assert read.verdict is Verdict.SUPERVISED
+  assert "map cannot independently" in read.reason
 
   actuate = cost_step(Step(instrument="namocell", op="start_sort", summary="x"), wc)
   assert actuate.verdict is Verdict.SUPERVISED
@@ -195,31 +221,40 @@ def test_federated_step_needs_the_seam_wired():
   assert "plr_tested_root" in v.reason
 
 
-def test_federated_step_is_supervised_never_automated():
-  """Hardware that a human stands next to is not headless, however validated it is."""
+def test_federated_step_refuses_a_nonexistent_checkout(tmp_path):
   wc = Workcell.default()
-  wc.plr_tested_root = "/somewhere/plr-tested"
+  wc.plr_tested_root = str(tmp_path / "typo")
+  verdict = cost_step(
+    Step(instrument="star", op="wgs_prep_lysis", summary="x"), wc
+  )
+  assert verdict.verdict is Verdict.MANUAL
+  assert "not an existing directory" in verdict.reason
+
+
+def test_federated_step_is_supervised_never_automated(tmp_path):
+  """Hardware that a human stands next to is not headless, however validated it is."""
+  wc = _wired_workcell(tmp_path)
   v = cost_step(Step(instrument="star", op="wgs_prep_lysis", summary="x"), wc)
   assert v.verdict is Verdict.SUPERVISED
   assert v.verdict.headless is False
 
 
-def test_a_written_but_unrun_script_is_written_not_manual():
+def test_a_written_but_unrun_script_is_written_not_manual(tmp_path):
   """The STAR bead cleanup: a real SPRI script, dry-validated, never run wet. "Someone
   writes that script first" is false; the script exists. But it is not validated either."""
-  wc = Workcell.default()
-  wc.plr_tested_root = "/somewhere/plr-tested"
-  v = cost_step(Step(instrument="star", op="pcr_enrichment_round1_cleanup", summary="x"), wc)
+  wc = _wired_workcell(tmp_path)
+  v = cost_step(
+    Step(instrument="star", op="pcr_enrichment_round1_cleanup", summary="x"), wc
+  )
   assert v.verdict is Verdict.WRITTEN
   assert v.verdict.headless is False
   assert "runs dry" in v.reason and "never run on" in v.reason
 
 
-def test_written_is_distinct_from_manual_and_supervised():
+def test_written_is_distinct_from_manual_and_supervised(tmp_path):
   """library_pool has no script (MANUAL); wgs_prep_lysis is validated (SUPERVISED);
   pcr_enrichment_round1_cleanup is WRITTEN. Three different facts about the same instrument."""
-  wc = Workcell.default()
-  wc.plr_tested_root = "/somewhere/plr-tested"
+  wc = _wired_workcell(tmp_path)
   got = {
     op: cost_step(Step(instrument="star", op=op, summary="x"), wc).verdict
     for op in ("library_pool", "pcr_enrichment_round1_cleanup", "wgs_prep_lysis")
@@ -231,21 +266,19 @@ def test_written_is_distinct_from_manual_and_supervised():
   }
 
 
-def test_federated_step_without_a_validated_run_card_is_manual():
+def test_federated_step_without_a_validated_run_card_is_manual(tmp_path):
   """An instrument's reputation must not transfer to an arbitrary step. plr-tested has no
   validated library-pooling script, so naming the STAR must not make one appear."""
-  wc = Workcell.default()
-  wc.plr_tested_root = "/somewhere/plr-tested"
+  wc = _wired_workcell(tmp_path)
   v = cost_step(Step(instrument="star", op="library_pool", summary="x"), wc)
   assert v.verdict is Verdict.MANUAL
   assert "no run card for 'library_pool'" in v.reason
 
 
-def test_supervised_reason_carries_the_actual_validation_record():
+def test_supervised_reason_carries_the_actual_validation_record(tmp_path):
   """A supervised verdict must say what was actually watched, including the caveats: the
   whole-genome sequencing leg is dry-validated and its wet form has never run."""
-  wc = Workcell.default()
-  wc.plr_tested_root = "/somewhere/plr-tested"
+  wc = _wired_workcell(tmp_path)
   v = cost_step(Step(instrument="star", op="wgs_prep_lysis", summary="x"), wc)
   assert "DRY" in v.reason and "never run" in v.reason
 
@@ -388,8 +421,260 @@ def test_executor_never_runs_past_a_blocked_step():
 
 def test_executor_refuses_to_perform_a_non_zero_decode_op():
   ex = Executor(Workcell.default(), armed=True)
-  with pytest.raises(KeyError):
+  with pytest.raises(RuntimeError, match="refuses ProtocolMap command"):
     ex._perform(Step(instrument="namocell", op="start_sort", summary="x"))
+
+
+def test_negative_tcp_probe_stops_before_the_next_step(monkeypatch):
+  """A structured negative result is a failed preflight, not a completed step."""
+  from plr_re.instruments import agilent6530, namocell
+
+  calls = []
+  monkeypatch.setattr(
+    agilent6530,
+    "probe_module",
+    lambda _host, port: {
+      "reachable": False,
+      "port": port,
+      "error": "connection refused",
+    },
+  )
+  monkeypatch.setattr(
+    namocell,
+    "discover_usb",
+    lambda: calls.append("discover") or [{"likely_control": True}],
+  )
+  workcell = Workcell.default()
+  config = workcell.instruments["agilent6530"]
+  workcell.instruments["agilent6530"] = type(config)(
+    key=config.key,
+    endpoint="127.0.0.1:1",
+  )
+  protocol = Protocol(
+    name="preflight",
+    summary="stop on negative readiness",
+    steps=(
+      Step(
+        instrument="agilent6530",
+        op=ZeroDecodeOp.PROBE_TCP.value,
+        summary="probe module",
+      ),
+      Step(
+        instrument="namocell",
+        op=ZeroDecodeOp.DISCOVER_USB.value,
+        summary="discover USB",
+      ),
+    ),
+  )
+
+  evidence = EvidenceLedger()
+  report = Executor(
+    workcell,
+    armed=True,
+    evidence=evidence,
+    run_id="negative_tcp",
+  ).run(protocol)
+
+  assert report.completed == 0
+  assert report.handoff is not None
+  assert "did not reach" in report.handoff.reason
+  assert calls == []
+  assert [event.kind for event in evidence.by_run("negative_tcp")][-2:] == [
+    EventKind.STEP_FAILED,
+    EventKind.RUN_STOPPED,
+  ]
+
+
+def test_closed_http_probe_and_unknown_run_folder_are_failures(
+  tmp_path, monkeypatch
+):
+  from plr_re.instruments import element_aviti
+
+  monkeypatch.setattr(
+    element_aviti,
+    "probe_services",
+    lambda _host, ports=None: [
+      {"port": (ports or [443])[0], "open": False, "error": "connection refused"}
+    ],
+  )
+  workcell = Workcell.default()
+  config = workcell.instruments["element_aviti"]
+  workcell.instruments["element_aviti"] = type(config)(
+    key=config.key,
+    endpoint="127.0.0.1:443",
+  )
+  http_protocol = Protocol(
+    name="http_probe",
+    summary="closed service",
+    steps=(
+      Step(
+        instrument="element_aviti",
+        op=ZeroDecodeOp.PROBE_HTTP.value,
+        summary="probe services",
+      ),
+    ),
+  )
+  http_report = Executor(workcell, armed=True).run(http_protocol)
+  assert http_report.completed == 0
+  assert http_report.handoff is not None
+  assert "no HTTP response" in http_report.handoff.reason
+
+  run_dir = tmp_path / "empty-run"
+  run_dir.mkdir()
+  folder_protocol = Protocol(
+    name="folder_probe",
+    summary="unknown run folder",
+    steps=(
+      Step(
+        instrument="element_aviti",
+        op=ZeroDecodeOp.WATCH_RUN_FOLDER.value,
+        summary="read run folder",
+        params={"run_dir": str(run_dir)},
+      ),
+    ),
+  )
+  folder_report = Executor(workcell, armed=True).run(folder_protocol)
+  assert folder_report.completed == 0
+  assert folder_report.handoff is not None
+  assert "completion is not evidenced" in folder_report.handoff.reason
+
+
+def test_open_socket_without_http_response_is_not_http_readiness(monkeypatch):
+  from plr_re.instruments import element_aviti
+
+  monkeypatch.setattr(
+    element_aviti,
+    "probe_services",
+    lambda _host, ports=None: [
+      {
+        "port": (ports or [443])[0],
+        "open": True,
+        "http_error": "TLS handshake failed",
+      }
+    ],
+  )
+  workcell = Workcell.default()
+  config = workcell.instruments["element_aviti"]
+  workcell.instruments["element_aviti"] = type(config)(
+    key=config.key,
+    endpoint="127.0.0.1:443",
+  )
+  protocol = Protocol(
+    name="http_probe_without_http",
+    summary="socket only",
+    steps=(
+      Step(
+        instrument="element_aviti",
+        op=ZeroDecodeOp.PROBE_HTTP.value,
+        summary="probe services",
+      ),
+    ),
+  )
+
+  report = Executor(workcell, armed=True).run(protocol)
+
+  assert report.completed == 0
+  assert report.handoff is not None
+  assert "no HTTP response" in report.handoff.reason
+
+
+def test_empty_upload_marker_is_not_run_completion(tmp_path):
+  run_dir = tmp_path / "empty-upload"
+  run_dir.mkdir()
+  (run_dir / "RunUploaded.json").write_text("{}", encoding="utf-8")
+  protocol = Protocol(
+    name="empty_upload",
+    summary="empty marker",
+    steps=(
+      Step(
+        instrument="element_aviti",
+        op=ZeroDecodeOp.WATCH_RUN_FOLDER.value,
+        summary="read completion",
+        params={"run_dir": str(run_dir)},
+      ),
+    ),
+  )
+
+  report = Executor(Workcell.default(), armed=True).run(protocol)
+
+  assert report.completed == 0
+  assert report.handoff is not None
+  assert "parsed upload marker with an outcome" in report.handoff.reason
+
+
+def test_unexpected_adapter_error_is_sealed_and_stops(monkeypatch):
+  from plr_re.instruments import namocell
+
+  def fail():
+    raise TypeError("adapter contract drift")
+
+  monkeypatch.setattr(namocell, "discover_usb", fail)
+  protocol = Protocol(
+    name="adapter_error",
+    summary="unexpected adapter failure",
+    steps=(
+      Step(
+        instrument="namocell",
+        op=ZeroDecodeOp.DISCOVER_USB.value,
+        summary="discover",
+      ),
+    ),
+  )
+  evidence = EvidenceLedger()
+
+  report = Executor(
+    Workcell.default(),
+    armed=True,
+    evidence=evidence,
+    run_id="adapter_error",
+  ).run(protocol)
+
+  assert report.handoff is not None
+  events = evidence.by_run("adapter_error")
+  assert [event.kind for event in events][-2:] == [
+    EventKind.STEP_FAILED,
+    EventKind.RUN_STOPPED,
+  ]
+  assert events[-2].evidence_level is EvidenceLevel.MODELED
+  assert events[-1].evidence_level is EvidenceLevel.MODELED
+
+
+def test_malformed_endpoint_failure_is_not_measured():
+  workcell = Workcell.default()
+  config = workcell.instruments["agilent6530"]
+  workcell.instruments["agilent6530"] = type(config)(
+    key=config.key,
+    endpoint="host:notaport",
+  )
+  protocol = Protocol(
+    name="malformed_endpoint",
+    summary="invalid local config",
+    steps=(
+      Step(
+        instrument="agilent6530",
+        op=ZeroDecodeOp.PROBE_TCP.value,
+        summary="probe",
+      ),
+    ),
+  )
+  evidence = EvidenceLedger()
+
+  Executor(
+    workcell,
+    armed=True,
+    evidence=evidence,
+    run_id="malformed_endpoint",
+  ).run(protocol)
+
+  events = evidence.by_run("malformed_endpoint")
+  assert [event.kind for event in events][-2:] == [
+    EventKind.STEP_FAILED,
+    EventKind.RUN_STOPPED,
+  ]
+  assert all(
+    event.evidence_level is EvidenceLevel.MODELED
+    for event in events
+  )
 
 
 def test_split_endpoint_parses_and_refuses_ambiguity():
@@ -407,6 +692,37 @@ def test_split_endpoint_parses_and_refuses_ambiguity():
     _split_endpoint("::1", 23)
 
 
+def test_step_parameters_are_deeply_frozen_for_run_provenance():
+  from autonomous_lab.executor import _protocol_digest
+
+  source = {
+    "run_dir": "/runs/original",
+    "options": {"channels": [1, 2]},
+  }
+  protocol = Protocol(
+    name="frozen",
+    summary="immutable run inputs",
+    steps=(
+      Step(
+        instrument="element_aviti",
+        op=ZeroDecodeOp.WATCH_RUN_FOLDER.value,
+        summary="read run",
+        params=source,
+      ),
+    ),
+  )
+  before = _protocol_digest(protocol)
+
+  source["run_dir"] = "/runs/mutated"
+  source["options"]["channels"].append(3)
+
+  assert protocol.steps[0].params["run_dir"] == "/runs/original"
+  assert protocol.steps[0].params["options"]["channels"] == (1, 2)
+  assert _protocol_digest(protocol) == before
+  with pytest.raises(TypeError):
+    protocol.steps[0].params["run_dir"] = "/runs/forbidden"
+
+
 def test_handoff_card_names_the_gap_closer_for_a_blocked_step():
   """A card that says 'decode the protocol' helps nobody at a bench."""
   p = Protocol(
@@ -418,6 +734,93 @@ def test_handoff_card_names_the_gap_closer_for_a_blocked_step():
   assert report.handoff is not None
   assert "discover" in report.handoff.gap_closer
   assert "start_sort" in report.handoff.blocking
+
+
+def test_config_blocker_does_not_prescribe_reverse_engineering():
+  protocol = Protocol(
+    name="missing_endpoint",
+    summary="configuration gap",
+    steps=(
+      Step(
+        instrument="element_aviti",
+        op=ZeroDecodeOp.PROBE_HTTP.value,
+        summary="probe services",
+      ),
+    ),
+  )
+  report = Executor(Workcell.default()).run(protocol)
+  assert report.handoff is not None
+  assert "endpoint" in report.handoff.reason
+  assert report.handoff.blocking == []
+  assert report.handoff.gap_closer == ""
+
+
+def test_headless_dry_run_reports_preview_not_completion():
+  protocol = Protocol(
+    name="preview",
+    summary="one safe read",
+    steps=(
+      Step(
+        instrument="namocell",
+        op=ZeroDecodeOp.DISCOVER_USB.value,
+        summary="discover USB",
+      ),
+    ),
+  )
+  report = Executor(Workcell.default()).run(protocol)
+  assert report.handoff is None
+  assert "previewed all 1 steps; executed 0" in report.render()
+  assert "completed all" not in report.render()
+
+
+def test_executor_does_not_resolve_irrelevant_map_for_absent_instrument(tmp_path):
+  workcell = Workcell.default()
+  config = workcell.instruments["namocell"]
+  workcell.instruments["namocell"] = type(config)(
+    key=config.key,
+    present=False,
+    map_path=str(tmp_path / "missing-map.json"),
+  )
+  protocol = Protocol(
+    name="absent",
+    summary="absent instrument",
+    steps=(Step(instrument="namocell", op="start_sort", summary="sort"),),
+  )
+
+  report = Executor(workcell).run(protocol)
+
+  assert report.handoff is not None
+  assert "not in this workcell" in report.handoff.reason
+
+
+def test_executor_seals_federated_run_card_bytes(tmp_path):
+  workcell = _wired_workcell(tmp_path)
+  protocol = Protocol(
+    name="federated_provenance",
+    summary="one supervised run card",
+    steps=(
+      Step(
+        instrument="star",
+        op="wgs_prep_lysis",
+        summary="supervised liquid handling",
+      ),
+    ),
+  )
+  evidence = EvidenceLedger()
+
+  Executor(
+    workcell,
+    evidence=evidence,
+    run_id="federated_provenance",
+  ).run(protocol)
+
+  started = evidence.by_run("federated_provenance")[0]
+  dependency = started.payload["federated_dependency"]
+  assert dependency["configured"] is True
+  assert len(dependency["source_digest"]) == 64
+  assert dependency["files"]
+  assert all(item["readable"] is True for item in dependency["files"].values())
+  assert all(len(item["sha256"]) == 64 for item in dependency["files"].values())
 
 
 # -- workcell round trip -------------------------------------------------------
@@ -441,15 +844,24 @@ def test_workcell_rejects_an_unknown_instrument(tmp_path):
     Workcell.from_json(str(path))
 
 
+def test_workcell_rejects_unknown_configuration_fields(tmp_path):
+  path = tmp_path / "typo.json"
+  path.write_text(
+    '{"name":"x","instruments":{"namocell":{"presnt":false}}}',
+    encoding="utf-8",
+  )
+  with pytest.raises(ValueError, match="presnt"):
+    Workcell.from_json(str(path))
+
+
 # -- known failures ------------------------------------------------------------
 
 
-def test_a_run_card_that_failed_on_hardware_is_broken_not_manual():
+def test_a_run_card_that_failed_on_hardware_is_broken_not_manual(tmp_path):
   """The Tecan case. Its absorbance run card is written and was run; it times out every
   time. Calling that manual would say "someone writes that script first", which is false,
   and would make a known defect look like unwritten work."""
-  wc = Workcell.default()
-  wc.plr_tested_root = "/somewhere/plr-tested"
+  wc = _wired_workcell(tmp_path)
   v = cost_step(Step(instrument="tecan", op="read_absorbance", summary="x"), wc)
   assert v.verdict is Verdict.BROKEN
   assert v.verdict.headless is False
@@ -457,11 +869,10 @@ def test_a_run_card_that_failed_on_hardware_is_broken_not_manual():
   assert "TimeoutError" in v.reason
 
 
-def test_the_tecan_reader_is_never_reported_as_working():
+def test_the_tecan_reader_is_never_reported_as_working(tmp_path):
   """Standing rule for this instrument: it has never read a plate. No verdict anywhere may
   imply otherwise."""
-  wc = Workcell.default()
-  wc.plr_tested_root = "/somewhere/plr-tested"
+  wc = _wired_workcell(tmp_path)
   for op in ("read_absorbance",):
     v = cost_step(Step(instrument="tecan", op=op, summary="x"), wc)
     assert v.verdict in (Verdict.BROKEN, Verdict.MANUAL)
@@ -469,11 +880,10 @@ def test_the_tecan_reader_is_never_reported_as_working():
     assert v.verdict is not Verdict.SUPERVISED
 
 
-def test_tecan_bringup_and_tray_are_supervised_because_they_did_pass():
+def test_tecan_bringup_and_tray_are_supervised_because_they_did_pass(tmp_path):
   """The other half of honesty: bring-up and the tray really did pass on the instrument,
   so under-reporting them would be its own inaccuracy."""
-  wc = Workcell.default()
-  wc.plr_tested_root = "/somewhere/plr-tested"
+  wc = _wired_workcell(tmp_path)
   for op in ("bringup", "tray_cycle"):
     v = cost_step(Step(instrument="tecan", op=op, summary="x"), wc)
     assert v.verdict is Verdict.SUPERVISED, op

@@ -5,24 +5,30 @@ probing a port, reading a run folder. `run --armed` performs those for real and 
 the first step that needs a human. There is no flag that actuates anything; commands that
 move an instrument live in plr-re, behind its own arming switches.
 
-`ledger` and `gaps` exit non-zero while a protocol cannot run unattended, matching
-`plr-re map coverage`, so they work as gates and not only as reports.
+`ledger` exits non-zero while a protocol cannot run unattended. `gaps` exits non-zero
+while reverse-engineering gaps remain; it does not treat manual work, configuration,
+supervision, or a known hardware failure as a map-decoding task.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from typing import List
 
-from .doctor import check_federated, render as render_checks
+from . import protocols
+from .demo import run_demo
+from .doctor import check_federated
+from .doctor import render as render_checks
+from .evidence import EvidenceLedger
 from .executor import Executor
 from .ledger import build_ledger, rank_unlocks
 from .model import Verdict
 from .registry import FEDERATED, registry
+from .samples import SampleTracker
 from .workcell import Workcell
-from . import protocols
 
 
 def _log_setup():
@@ -57,7 +63,13 @@ def _stock(args) -> int:
   print("\nfederated instruments (driven from di-omics/plr-tested):")
   for key in sorted(FEDERATED):
     f = FEDERATED[key]
-    wired = "wired" if (key in wc.federated and wc.plr_tested_root) else "not wired"
+    entry_exists = bool(
+      wc.plr_tested_root
+      and os.path.isfile(
+        os.path.join(os.path.expanduser(wc.plr_tested_root), f.entry)
+      )
+    )
+    wired = "wired" if (key in wc.federated and entry_exists) else "not wired"
     print(f"\n  {f.device}  ({key})  [{wired}]")
     print(f"    role         {f.role.value}")
     print(f"    entry        {f.entry}")
@@ -141,9 +153,75 @@ def _doctor(args) -> int:
 
 def _run(args) -> int:
   wc = _workcell(args)
-  report = Executor(wc, armed=args.armed).run(protocols.get(args.protocol))
+  evidence = EvidenceLedger(args.evidence) if args.evidence else None
+  report = Executor(
+    wc,
+    armed=args.armed,
+    evidence=evidence,
+    run_id=args.run_id,
+    actor=args.actor,
+  ).run(protocols.get(args.protocol))
   print(report.render())
+  if evidence is not None:
+    print(f"\n  evidence ledger  {evidence.path}")
+    print(f"  run id           {report.run_id}")
+    print(f"  chain head       {evidence.head_hash}")
   return 0 if report.handoff is None else 1
+
+
+def _verify_evidence(args) -> int:
+  path = os.path.abspath(os.path.expanduser(args.path))
+  if not os.path.isfile(path) or os.path.getsize(path) == 0:
+    print(f"INVALID: no evidence events at {path}")
+    return 1
+  try:
+    ledger = EvidenceLedger(path)
+  except ValueError as exc:
+    print(f"INVALID: {exc}")
+    return 1
+  report = ledger.verify()
+  print(f"VALID  {report.event_count} event(s)")
+  print(f"head   {report.head_hash}")
+  return 0
+
+
+def _trace(args) -> int:
+  ledger = EvidenceLedger(args.path)
+  tracker = SampleTracker(ledger, args.run_id)
+  trace = tracker.lineage(args.material_id)
+  print(f"material: {trace.material.material_id}")
+  print(f"sample:   {trace.material.sample_id}")
+  print(f"status:   {trace.material.status.value}")
+  print("\nlineage (root -> material):")
+  for material in trace.ancestors:
+    position = f"/{material.position}" if material.position else ""
+    parents = ", ".join(material.parent_material_ids) or "root"
+    print(
+      f"  {material.material_id:<20} {material.material_type:<24} "
+      f"{material.container_id}{position}  parents={parents}"
+    )
+  return 0
+
+
+def _demo_loop(args) -> int:
+  ledger = EvidenceLedger(args.evidence)
+  summary = run_demo(ledger, run_id=args.run_id, actor=args.actor)
+  proposal = summary.proposal
+  print("Evidence-bound device-free learning loop")
+  print(f"  run                 {summary.run_id}")
+  print(f"  materials           {summary.material_count}")
+  print(f"  evidence events     {summary.event_count}")
+  print(f"  qualified rows      {summary.qualified_observations}")
+  print(f"  quarantined rows    {summary.quarantined_observations}")
+  print(f"  next proposal       {proposal.proposal_id}")
+  for name, value in proposal.design.values.items():
+    print(f"    {name:<18} {value:g}")
+  print(f"  predicted objective {proposal.predicted_objective:.4g}")
+  print(f"  uncertainty         {proposal.uncertainty:.4g} (heuristic, not calibrated)")
+  print(f"  execution allowed   {str(proposal.execution_allowed).lower()}")
+  print(f"  evidence ledger     {ledger.path}")
+  print(f"  chain head          {summary.evidence_head}")
+  return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -187,10 +265,34 @@ def build_parser() -> argparse.ArgumentParser:
   rn = sub.add_parser("run", help="run a protocol as far as it honestly goes")
   rn.add_argument("protocol")
   rn.add_argument(
-    "--armed", action="store_true", help="perform the read-only steps for real (never actuates)"
+    "--armed",
+    action="store_true",
+    help="perform supported read-only steps for real (never actuates)",
   )
+  rn.add_argument("--evidence", help="append a tamper-evident JSONL run record")
+  rn.add_argument("--run-id", help="stable run identifier (generated when omitted)")
+  rn.add_argument("--actor", default="autonomous-lab", help="actor recorded in evidence")
   common(rn)
   rn.set_defaults(func=_run)
+
+  ve = sub.add_parser("verify", help="verify an evidence JSONL hash chain")
+  ve.add_argument("path")
+  ve.set_defaults(func=_verify_evidence)
+
+  tr = sub.add_parser("trace", help="trace one material through an evidence ledger")
+  tr.add_argument("path")
+  tr.add_argument("run_id")
+  tr.add_argument("material_id")
+  tr.set_defaults(func=_trace)
+
+  dm = sub.add_parser(
+    "demo-loop",
+    help="run the device-free sample/QC/learning loop and write its evidence",
+  )
+  dm.add_argument("--evidence", required=True, help="JSONL output path")
+  dm.add_argument("--run-id", default="demo_process_learning")
+  dm.add_argument("--actor", default="learning-demo")
+  dm.set_defaults(func=_demo_loop)
 
   return p
 
@@ -210,7 +312,9 @@ def main(argv: List[str] = None) -> int:
     print(
       f"error: {e}\n"
       "autonomous-lab needs plr-re. Install it with:\n"
-      "  pip install 'plr-re @ git+https://github.com/di-omics/plr-reverse-engineer'",
+      "  pip install 'plr-re @ "
+      "git+https://github.com/di-omics/plr-reverse-engineer@"
+      "f0390142e840f0525825af57ef4785d8febe6cd0'",
       file=sys.stderr,
     )
     return 1

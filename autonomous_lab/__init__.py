@@ -13,29 +13,93 @@ unattended, and what exactly is blocking the rest?
     ledger.unlocks()          # which decode would free the most steps, ranked
 
 The answers are currently bleak, and that is the feature. Nothing here can flatter the
-lab: verdicts are computed from the resolved ProtocolMap, so a step is automated only if
-its command is genuinely decoded, and the reference protocols include the cartridge
-seating and flow-cell loading that a demo would quietly omit.
+lab: only built-in zero-decode reads can be automated. A decoded ProtocolMap remains
+supervised because it cannot independently approve its own request bytes, and the
+reference protocols include the cartridge seating and flow-cell loading that a demo
+would quietly omit.
 """
 
+from .evidence import (
+  GENESIS_HASH,
+  EventKind,
+  EvidenceEvent,
+  EvidenceLedger,
+  EvidenceLevel,
+  VerificationReport,
+  canonical_json,
+  digest,
+  file_digest,
+)
 from .executor import Executor, Handoff, RunReport, StepResult
+from .gates import (
+  AcceptanceRule,
+  Comparator,
+  GateDecision,
+  GateOutcome,
+  QualityGate,
+  RuleOutcome,
+  RuleResult,
+)
+from .learning import (
+  Design,
+  DesignVariable,
+  EvidenceBoundOptimizer,
+  Observation,
+  ObservationDisposition,
+  Proposal,
+  record_observation,
+)
 from .ledger import Ledger, StepVerdict, Unlock, build_ledger, cost_step, rank_unlocks
 from .model import Artifact, Protocol, Role, Step, Tier, Verdict, ZeroDecodeOp
 from .registry import FEDERATED, FederatedSpec, InstrumentSpec, declared, registry, spec
+from .samples import (
+  DerivationMode,
+  Lineage,
+  LineageEdge,
+  Material,
+  MaterialStatus,
+  Measurement,
+  SampleTracker,
+)
+from .version import __version__
 from .workcell import InstrumentConfig, Workcell
 
 __all__ = [
+  "AcceptanceRule",
   "Artifact",
+  "Comparator",
+  "Design",
+  "DesignVariable",
+  "DerivationMode",
+  "EvidenceBoundOptimizer",
+  "EvidenceEvent",
+  "EvidenceLedger",
+  "EvidenceLevel",
   "Executor",
   "FEDERATED",
   "FederatedSpec",
+  "GENESIS_HASH",
+  "GateDecision",
+  "GateOutcome",
   "Handoff",
   "InstrumentConfig",
   "InstrumentSpec",
   "Ledger",
+  "Lineage",
+  "LineageEdge",
+  "Material",
+  "MaterialStatus",
+  "Measurement",
+  "Observation",
+  "ObservationDisposition",
+  "Proposal",
   "Protocol",
+  "QualityGate",
   "Role",
+  "RuleOutcome",
+  "RuleResult",
   "RunReport",
+  "SampleTracker",
   "Step",
   "StepResult",
   "StepVerdict",
@@ -45,9 +109,16 @@ __all__ = [
   "Workcell",
   "ZeroDecodeOp",
   "build_ledger",
+  "canonical_json",
   "cost_step",
   "declared",
+  "digest",
+  "file_digest",
   "rank_unlocks",
+  "record_observation",
   "registry",
   "spec",
+  "EventKind",
+  "VerificationReport",
+  "__version__",
 ]

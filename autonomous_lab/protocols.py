@@ -57,7 +57,10 @@ SINGLE_CELL_GENOMICS = Protocol(
     Step(
       instrument="namocell",
       op=ZeroDecodeOp.DISCOVER_USB.value,
-      summary="preflight: confirm the dispenser's control link enumerates",
+      summary=(
+        "preflight: enumerate likely serial control-link candidates "
+        "(instrument identity unconfirmed)"
+      ),
     ),
     Step(
       instrument="namocell",
@@ -128,7 +131,10 @@ SINGLE_CELL_GENOMICS = Protocol(
     Step(
       instrument="element_aviti",
       op=ZeroDecodeOp.PROBE_HTTP.value,
-      summary="preflight: confirm the AvitiOS control plane answers before committing reagents",
+      summary=(
+        "preflight: require an HTTP response from the configured endpoint "
+        "(service identity unconfirmed)"
+      ),
     ),
     Step(
       instrument="element_aviti",
@@ -158,7 +164,7 @@ SINGLE_CELL_GENOMICS = Protocol(
     Step(
       instrument="element_aviti",
       op=ZeroDecodeOp.WATCH_RUN_FOLDER.value,
-      summary="read run state and outcome off the output folder until complete",
+      summary="require a parsed completion marker and outcome in the output folder",
       consumes=("run_folder",),
       produces=("run_outcome",),
       params={"run_dir": "/mnt/aviti-output/<run>"},
@@ -183,7 +189,10 @@ SMALL_MOLECULE_QC = Protocol(
     Step(
       instrument="viaflo96",
       op=ZeroDecodeOp.DISCOVER_USB.value,
-      summary="preflight: confirm the pipette's programming link enumerates",
+      summary=(
+        "preflight: enumerate likely serial programming-link candidates "
+        "(instrument identity unconfirmed)"
+      ),
     ),
     Step(
       instrument="viaflo96",
@@ -229,7 +238,10 @@ SMALL_MOLECULE_QC = Protocol(
     Step(
       instrument="agilent6530",
       op=ZeroDecodeOp.PROBE_TCP.value,
-      summary="preflight: confirm the LC stack answers on the LAN",
+      summary=(
+        "preflight: require the configured LAN socket to accept a connection "
+        "(instrument identity unconfirmed)"
+      ),
     ),
     Step(
       instrument="agilent6530",

@@ -4,24 +4,43 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autonomous-lab"
-version = "0.1.0"
-description = "How much of an end-to-end lab run happens without a human, and what is in the way"
+version = "0.2.0"
+description = "Evidence-bound execution, sample provenance, QC, and learning for autonomous labs"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "di-omics" }]
+keywords = [
+  "autonomous-lab",
+  "lab-automation",
+  "pylabrobot",
+  "provenance",
+  "sample-tracking",
+]
 
 # plr-re is the only dependency: this package derives its instrument registry from
 # plr_re.protocolmap.SEEDS and calls plr-re's zero-decode readers. It is not on PyPI, so
 # it installs from git. Everything else is stdlib, so the ledger computes on a laptop.
 dependencies = [
-  "plr-re @ git+https://github.com/di-omics/plr-reverse-engineer",
+  "plr-re @ git+https://github.com/di-omics/plr-reverse-engineer@f0390142e840f0525825af57ef4785d8febe6cd0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "ruff>=0.5"]
 
 [project.scripts]
 autonomous-lab = "autonomous_lab.cli:main"
 
+[project.urls]
+Repository = "https://github.com/di-omics/autonomous-lab"
+
 [tool.setuptools.packages.find]
 include = ["autonomous_lab*"]
+
+[tool.setuptools.package-data]
+autonomous_lab = ["py.typed"]
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

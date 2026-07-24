@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
 from plr_re.protocolmap import DEFAULT_TRANSPORT, DEVICE_NAMES, SEEDS, Transport
+
 from .model import Role, ZeroDecodeOp
 
 

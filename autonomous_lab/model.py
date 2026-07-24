@@ -10,7 +10,8 @@ The tier split is the load-bearing idea, and it is deliberately harsh:
                USB bus, or opens a socket. It works today.
   NEEDS_MAP    the step replays a command out of a ProtocolMap. Every seeded command in
                this repo is decoded=False, so in practice this means blocked until a
-               bench capture decodes it.
+               bench capture decodes it, then supervised until exact request bytes have
+               independent read-only validation.
   FEDERATED    the step runs somewhere else that already drives real hardware (the
                validated PyLabRobot scripts in di-omics/plr-tested), reached over a run
                card rather than a ProtocolMap.
@@ -22,16 +23,61 @@ plate, press Start on a vendor console -- is MANUAL, and saying so is the point.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Iterator, List, Mapping, Optional, Tuple
+
+
+class _FrozenParameters(Mapping[str, object]):
+  """Small immutable mapping for the protocol values sealed into run evidence."""
+
+  def __init__(self, values: Mapping[str, object]):
+    self._values = {
+      key: _freeze_parameter(value)
+      for key, value in values.items()
+    }
+
+  def __getitem__(self, key: str) -> object:
+    return self._values[key]
+
+  def __iter__(self) -> Iterator[str]:
+    return iter(self._values)
+
+  def __len__(self) -> int:
+    return len(self._values)
+
+  def __repr__(self) -> str:
+    return repr(self._values)
+
+  def __deepcopy__(self, _memo):
+    return self
+
+
+def _freeze_parameter(value: object) -> object:
+  """Normalize protocol parameters into a deeply immutable JSON subset."""
+  if value is None or type(value) in (str, bool, int):
+    return value
+  if type(value) is float:
+    if not math.isfinite(value):
+      raise ValueError("step parameters must not contain non-finite numbers")
+    return value
+  if isinstance(value, Mapping):
+    if any(type(key) is not str for key in value):
+      raise TypeError("step parameter object keys must be strings")
+    return _FrozenParameters(value)
+  if isinstance(value, (list, tuple)):
+    return tuple(_freeze_parameter(item) for item in value)
+  raise TypeError(
+    f"step parameters must use JSON values, not {type(value).__name__}"
+  )
 
 
 class Tier(str, Enum):
   """How a step reaches its instrument."""
 
   ZERO_DECODE = "zero_decode"  # works today: file read, bus enumeration, socket probe
-  NEEDS_MAP = "needs_map"  # replays a ProtocolMap command; blocked while undecoded
+  NEEDS_MAP = "needs_map"  # decoded maps remain supervised pending independent validation
   FEDERATED = "federated"  # runs in plr-tested on validated hardware, via a run card
 
 
@@ -118,10 +164,19 @@ class Step:
   summary: str
   consumes: Tuple[str, ...] = ()
   produces: Tuple[str, ...] = ()
-  params: Dict[str, object] = field(default_factory=dict)
+  params: Mapping[str, object] = field(default_factory=dict)
   # Set when the step is a bench action no code path covers (seating a cartridge,
   # carrying a plate). Forces MANUAL regardless of what the instrument can do.
   manual_reason: Optional[str] = None
+
+  def __post_init__(self) -> None:
+    if not isinstance(self.params, Mapping):
+      raise TypeError("step params must be a mapping")
+    if any(type(key) is not str for key in self.params):
+      raise TypeError("step parameter keys must be strings")
+    object.__setattr__(self, "params", _FrozenParameters(self.params))
+    object.__setattr__(self, "consumes", tuple(self.consumes))
+    object.__setattr__(self, "produces", tuple(self.produces))
 
 
 @dataclass(frozen=True)
@@ -144,6 +199,10 @@ class Protocol:
   summary: str
   steps: Tuple[Step, ...]
   artifacts: Tuple[Artifact, ...] = ()
+
+  def __post_init__(self) -> None:
+    object.__setattr__(self, "steps", tuple(self.steps))
+    object.__setattr__(self, "artifacts", tuple(self.artifacts))
 
   def artifact(self, name: str) -> Optional[Artifact]:
     for art in self.artifacts:
