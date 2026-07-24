@@ -18,7 +18,7 @@ jobs:
       matrix:
         # 3.9 is plr-re's floor (requires-python = ">=3.9"); pin the top end too so a new
         # release cannot break the build without a commit here.
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.9", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,6 +41,18 @@ jobs:
           autonomous-lab protocols
           autonomous-lab ledger single_cell_genomics || [ $? -eq 1 ]
           autonomous-lab gaps || [ $? -eq 1 ]
+      - name: The evidence and learning loop is replayable
+        run: |
+          autonomous-lab demo-loop --evidence "${RUNNER_TEMP}/evidence-demo.jsonl"
+          autonomous-lab verify "${RUNNER_TEMP}/evidence-demo.jsonl"
+          autonomous-lab trace "${RUNNER_TEMP}/evidence-demo.jsonl" demo_process_learning output_a
+      - name: Check out federated hardware evidence
+        uses: actions/checkout@v4
+        with:
+          repository: di-omics/plr-tested
+          path: _federated/plr-tested
+      - name: Federated claims still match their run cards
+        run: autonomous-lab doctor --plr-tested _federated/plr-tested
 
   lint:
     runs-on: ubuntu-latest
@@ -48,7 +60,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - run: pip install ruff
       - run: ruff check autonomous_lab tests
 
@@ -59,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: No non-ASCII bytes in tracked text
         run: |
-          if LC_ALL=C grep -rlnP '[\x80-\xFF]' --include='*.py' --include='*.md' --include='*.toml' .; then
+          if LC_ALL=C grep -rlnP '[\x80-\xFF]' --include='*.py' --include='*.md' --include='*.toml' --include='*.json' --include='*.yml' --include='*.yaml' .; then
             echo "non-ASCII bytes found in the files above"
             exit 1
           fi

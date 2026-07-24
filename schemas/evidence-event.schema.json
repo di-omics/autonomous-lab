@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/di-omics/autonomous-lab/schemas/evidence-event.schema.json",
+  "title": "Laboratory evidence event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sequence",
+    "event_id",
+    "recorded_at",
+    "run_id",
+    "kind",
+    "actor",
+    "evidence_level",
+    "payload",
+    "previous_hash",
+    "event_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "run_started",
+        "permission_evaluated",
+        "step_started",
+        "step_completed",
+        "step_failed",
+        "run_stopped",
+        "run_completed",
+        "material_registered",
+        "material_derived",
+        "material_moved",
+        "material_status_changed",
+        "measurement_recorded",
+        "gate_evaluated",
+        "design_proposed",
+        "observation_recorded"
+      ]
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_level": {
+      "type": "string",
+      "enum": [
+        "modeled",
+        "simulated_execution",
+        "measured",
+        "hardware_validated"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    },
+    "previous_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "event_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
