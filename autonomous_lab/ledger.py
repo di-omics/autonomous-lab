@@ -4,11 +4,11 @@ This is the point of the lab layer. Given a workcell and a protocol, it costs ev
 against the actual state of the code -- the resolved ProtocolMap, the registry, the
 federated run cards -- and returns a verdict per step plus the arithmetic over them.
 
-Two rules keep it honest:
+Three rules keep it honest:
 
-  Nothing is automated by assertion. A step is AUTOMATED only if the map says its command
-  is decoded, or if it is a zero-decode operation the instrument genuinely supports. No
-  field anywhere lets a protocol author declare a step automated.
+  Nothing is automated by assertion. Only a built-in zero-decode read can be AUTOMATED.
+  A decoded ProtocolMap command remains SUPERVISED until an independent approval binds
+  the exact request bytes to a validated read-only operation. A map cannot approve itself.
 
   The blockers are named, not counted. A BLOCKED step reports which undecoded command
   blocks it, so `unlocks()` can rank the remaining reverse-engineering by how many steps
@@ -21,12 +21,14 @@ lab, so hops are counted separately and never folded into the autonomy fraction.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from plr_re.protocolmap import Transport
+
 from .model import Protocol, Step, Tier, Verdict, ZeroDecodeOp
-from .registry import FEDERATED, declared, registry
+from .registry import FEDERATED, FederatedSpec, ValidatedRun, declared, registry
 from .workcell import Workcell
 
 _ZERO_DECODE_VALUES = {op.value for op in ZeroDecodeOp}
@@ -80,11 +82,17 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
         f"{fed.device} runs from {fed.repo}, but the workcell does not say where it is "
         "checked out (set plr_tested_root)",
       )
+    checkout_issue = _federated_checkout_issue(wc.plr_tested_root, fed)
+    if checkout_issue:
+      return StepVerdict(step, Verdict.MANUAL, Tier.FEDERATED, checkout_issue)
     # A run card that exists and failed on the instrument is not unwritten work, and
     # saying "someone writes and proves that script first" about it would be false. The
     # Tecan's absorbance read is the case: written, run, and it times out every time.
     if step.op in fed.known_failures:
       run = fed.known_failures[step.op]
+      checkout_issue = _federated_checkout_issue(wc.plr_tested_root, fed, run)
+      if checkout_issue:
+        return StepVerdict(step, Verdict.MANUAL, Tier.FEDERATED, checkout_issue)
       return StepVerdict(
         step,
         Verdict.BROKEN,
@@ -98,6 +106,9 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
     # next action is a supervised wet run, not writing a script.
     if step.op in fed.written_ops:
       run = fed.written_ops[step.op]
+      checkout_issue = _federated_checkout_issue(wc.plr_tested_root, fed, run)
+      if checkout_issue:
+        return StepVerdict(step, Verdict.MANUAL, Tier.FEDERATED, checkout_issue)
       return StepVerdict(
         step,
         Verdict.WRITTEN,
@@ -120,6 +131,9 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
         f"on it; someone writes and proves that script first",
       )
     run = fed.validated_ops[step.op]
+    checkout_issue = _federated_checkout_issue(wc.plr_tested_root, fed, run)
+    if checkout_issue:
+      return StepVerdict(step, Verdict.MANUAL, Tier.FEDERATED, checkout_issue)
     gate = f"confirm token {run.confirm_token}" if run.confirm_token else "an operator at the E-stop"
     return StepVerdict(
       step,
@@ -158,10 +172,30 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
         f"'{step.op}' is not a meaningful zero-decode operation for {spec.device}; "
         f"it supports: {[o.value for o in spec.zero_decode] or 'none'}"
       )
-    if step.op == ZeroDecodeOp.WATCH_RUN_FOLDER.value and not step.params.get("run_dir"):
-      return StepVerdict(
-        step, Verdict.MANUAL, Tier.ZERO_DECODE, "no run_dir given to watch"
-      )
+    if step.op in (ZeroDecodeOp.PROBE_TCP.value, ZeroDecodeOp.PROBE_HTTP.value):
+      if cfg is None or not cfg.endpoint:
+        return StepVerdict(
+          step,
+          Verdict.BLOCKED,
+          Tier.ZERO_DECODE,
+          f"'{step.op}' is read-only, but no endpoint is configured for {spec.device}",
+        )
+    if step.op == ZeroDecodeOp.WATCH_RUN_FOLDER.value:
+      run_dir = str(step.params.get("run_dir") or "")
+      if not run_dir or "<" in run_dir or ">" in run_dir:
+        return StepVerdict(
+          step,
+          Verdict.BLOCKED,
+          Tier.ZERO_DECODE,
+          "the run-folder read is real, but run_dir is not bound to a concrete run",
+        )
+      if not os.path.isdir(run_dir):
+        return StepVerdict(
+          step,
+          Verdict.BLOCKED,
+          Tier.ZERO_DECODE,
+          f"the run-folder read is real, but run_dir '{run_dir}' is not an existing directory",
+        )
     return StepVerdict(step, Verdict.AUTOMATED, Tier.ZERO_DECODE, "read-only, needs no decoding")
 
   # Otherwise it must be a ProtocolMap command.
@@ -198,7 +232,7 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
   # open: DEFAULT_TRANSPORT is UNKNOWN for three of these instruments by design, and a
   # seeded map carries endpoint=None. Modelling only the coverage gate would report a
   # command as running headless today that setup() refuses to start at all.
-  if pm.endpoint is None:
+  if not pm.endpoint:
     return StepVerdict(
       step,
       Verdict.BLOCKED,
@@ -221,7 +255,52 @@ def cost_step(step: Step, wc: Workcell) -> StepVerdict:
       Tier.NEEDS_MAP,
       f"'{step.op}' actuates {spec.device}; needs allow_actuation and a human present",
     )
-  return StepVerdict(step, Verdict.AUTOMATED, Tier.NEEDS_MAP, f"'{step.op}' is decoded and read-only")
+  return StepVerdict(
+    step,
+    Verdict.SUPERVISED,
+    Tier.NEEDS_MAP,
+    f"'{step.op}' is decoded and labelled read-only, but the map cannot independently "
+    "prove what its request bytes do; replay remains operator-controlled",
+  )
+
+
+def _federated_checkout_issue(
+  root: str, fed: FederatedSpec, run: Optional[ValidatedRun] = None
+) -> Optional[str]:
+  """Return why a federated run card is not executable from this checkout."""
+  checkout = os.path.abspath(os.path.expanduser(root))
+  if not os.path.isdir(checkout):
+    return (
+      f"{fed.device} is configured through {fed.repo}, but plr_tested_root "
+      f"'{root}' is not an existing directory"
+    )
+  entry = os.path.join(checkout, fed.entry)
+  if not os.path.isfile(entry) or not os.access(entry, os.R_OK):
+    return (
+      f"{fed.device} cannot use its federated entry: readable file '{entry}' "
+      "does not exist"
+    )
+  if run is None:
+    return None
+  script = os.path.join(checkout, run.script)
+  if not os.path.isfile(script) or not os.access(script, os.R_OK):
+    return (
+      f"{fed.device} cannot use the claimed run card: readable file '{script}' "
+      "does not exist"
+    )
+  if run.confirm_token is None:
+    return None
+  try:
+    with open(script, encoding="utf-8", errors="replace") as fh:
+      body = fh.read()
+  except OSError as exc:
+    return f"{fed.device} run card '{script}' cannot be read: {exc}"
+  if run.confirm_token not in body:
+    return (
+      f"{fed.device} run card '{script}' does not contain required confirm "
+      f"token '{run.confirm_token}'"
+    )
+  return None
 
 
 @dataclass(frozen=True)
@@ -318,7 +397,10 @@ class Ledger:
     """
     steps: Dict[str, int] = {}
     for row in self.rows:
-      if row.verdict is Verdict.BLOCKED:
+      # Only missing command coverage belongs in the reverse-engineering queue.
+      # Configuration blockers (an endpoint or runtime path not bound) have an empty
+      # `blocking` tuple and need a different fix.
+      if row.verdict is Verdict.BLOCKED and row.blocking:
         steps[row.instrument] = steps.get(row.instrument, 0) + 1
     out: List[Unlock] = []
     for key, n in steps.items():

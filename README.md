@@ -1,171 +1,267 @@
-# autonomous-lab
+# Clair / autonomous-lab
 
-How much of an end-to-end lab run happens without a human, and what is in the way.
+[![CI](https://github.com/di-omics/autonomous-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/di-omics/autonomous-lab/actions/workflows/ci.yml)
 
-[plr-reverse-engineer](https://github.com/di-omics/plr-reverse-engineer) brings lab
-instruments under PyLabRobot control one at a time.
-[plr-tested](https://github.com/di-omics/plr-tested) is the PyLabRobot code that has
-actually been run on real hardware. This asks the question that only makes sense across
-all of them at once: given the instruments on the bench and the command sets decoded so
-far, how much of a real protocol runs unattended, and what exactly is blocking the rest?
+**The evidence-bound intelligence layer for autonomous biology.**
 
-It answers by costing every step against the actual state of the code. Nothing here is
-asserted. The registry is derived from `plr_re.protocolmap.SEEDS`, verdicts are computed
-from the resolved `ProtocolMap`, and a step counts as automated only if its command is
-genuinely decoded. There is no field a protocol author can set to declare one.
+Clair turns a protocol, acceptance criteria, and failure responses into a gated,
+auditable run across hardware a lab already owns. It keeps the physical and scientific
+worlds synchronized: what material exists, where it came from, what the instruments
+actually did, whether the evidence clears QC, and what experiment should be proposed
+next.
 
-```
+The governing boundary is simple:
+
+> A model may propose. Only deterministic evidence and permission gates may advance.
+
+This repository now joins five layers that were previously scattered across the
+di-omics portfolio:
+
+1. **Execution truth** - compute which steps are automated, supervised, written,
+   manual, blocked, or broken from real command maps and run cards.
+2. **Tamper-evident provenance** - append-only, SHA-256-chained run events with explicit
+   modeled, simulated, measured, or hardware-validated evidence.
+3. **Sample lineage** - immutable material registration, splits, pools, moves,
+   measurements, status, and root-to-result traceability.
+4. **Scientific permission** - deterministic QC rules that hold on missing data, weak
+   evidence, or unit drift.
+5. **Closed-loop learning** - bounded process proposals trained only on
+   provenance-linked, QC-qualified observations. Proposals never carry execution
+   permission.
+
+Research use only. Nothing here is clinically validated.
+
+## Run the complete device-free loop
+
+```bash
 pip install 'autonomous-lab @ git+https://github.com/di-omics/autonomous-lab'
 
-autonomous-lab stock                          # every instrument, its role, how far its map is
-autonomous-lab ledger single_cell_genomics    # cost a protocol step by step
-autonomous-lab gaps                           # the RE queue, ranked by steps freed
-autonomous-lab doctor --plr-tested ../plr-tested   # check my claims against your checkout
-autonomous-lab run single_cell_genomics       # run it as far as it honestly goes
+autonomous-lab demo-loop --evidence clair-demo.jsonl
+autonomous-lab verify clair-demo.jsonl
+autonomous-lab trace clair-demo.jsonl demo_low_input_genomics library_a
 ```
 
-## What it reports today
+The deterministic demo:
 
-Costing the single-cell genomics reference protocol (Namocell sort -> STAR whole-genome sequencing ->
-ODTC PCR1 -> STAR library -> AVITI sequencing -> run-folder readout), with a plr-tested
-checkout wired in via `--plr-tested`:
+- registers one source material and derives four library instances;
+- records yield, transfer-CV, and objective measurements;
+- passes three libraries through an explicit QC policy;
+- quarantines one mechanical fault from model training;
+- proposes a bounded next design from the three qualified observations;
+- writes 36 hash-chained events; and
+- records `execution_allowed: false` on the model proposal.
 
-| | steps | |
-| --- | --- | --- |
-| automated | 3 of 18 | run headless today: two link preflights and the AVITI run-folder read |
-| supervised | 2 of 18 | a validated run card exists in plr-tested, gated on a confirm token and an operator |
-| blocked | 8 of 18 | the command is undecoded; the coverage gate refuses the run |
-| manual | 4 of 18 | seating a cartridge, loading a flow cell, and two STAR steps nobody has written a validated script for |
-| broken | 1 of 18 | the run card exists, was run on the instrument, and failed |
+Synthetic execution inputs and observations are labeled `simulated_execution`; the
+derived proposal is labeled `modeled`. Neither is reported as a physical measurement.
+The deterministic demo requires a fresh evidence file and refuses a nonempty ledger
+before appending anything.
 
-**An unattended run reaches step 1 of 18 before it stops.** That number, not the 17%
-autonomy figure, is what "how automated is this lab" actually means: a read-only step near
-the end is only reachable if everything before it also ran. There are also 5 physical
-plate hops that no amount of decoding removes -- only a plate mover does.
+## Architecture
 
-`broken` is its own row on purpose. The Tecan plate reader's absorbance run card is
-written and was run on the instrument, where it fails deterministically: `TimeoutError`
-on `ABSOLUTE MTP,Y=`, 2 of 2, and the reader has never returned an OD matrix. Calling that
-`manual` would say "someone writes and proves that script first", which is false, and it
-would make a known defect look like unwritten work. One means do reverse-engineering; the
-other means debug a real failure. A planner needs to know which.
+```mermaid
+flowchart LR
+  Human["Scientist: goals, bounds, acceptance policy"]
+  Agent["Scientist or model proposal"]
+  Plan["Protocol + run bindings"]
+  Permission["Deterministic permission boundary"]
+  Executor["Read-only prefix executor"]
+  Hardware["Validated instrument adapters"]
+  Evidence["Hash-chained evidence ledger"]
+  Samples["Material lineage + custody"]
+  QC["QC gates"]
+  Learning["Qualified observations -> next proposal"]
 
-The reason the numbers are this low is the honest one. Across all six reverse-engineered
-instruments, **0 of 54 seeded commands are decoded**. Not one of them can be driven
-headlessly, and plr-re's own coverage gate refuses an armed run against an incomplete map.
-The only real instrument contact available today is the AVITI run-folder read, USB
-enumeration, and two socket probes. This tool exists to say that precisely, and to say
-what would change it.
-
-## The RE queue is computed, not argued about
-
-```
-$ autonomous-lab gaps
-  namocell       frees 5 step(s), needs 9 command(s) decoded
-  element_aviti  frees 3 step(s), needs 8 command(s) decoded
-  biotage_v10    frees 3 step(s), needs 9 command(s) decoded
-  agilent6530    frees 2 step(s), needs 10 command(s) decoded
-```
-
-Ranked by instrument, not by command, and that is forced by the code rather than a
-presentation choice: plr-re's coverage gate is all-or-nothing across a map, so decoding a
-single command frees exactly zero steps. The unit of progress is a finished map, and a
-per-command queue would be advice nobody could act on.
-
-## Don't take my word for the hardware claims
-
-The instrument registry is derived from `SEEDS`, so it cannot drift. The federated claims
-have no such luxury: `validated_ops` is hand-written paths and prose about a repo this one
-does not control, which makes it exactly the kind of assertion this package refuses to
-accept from anybody else. So it ships a checker.
-
-```
-$ autonomous-lab doctor --plr-tested ../plr-tested
-  [ok  ] star.pta_wga_lysis  run card exists: hamilton-star/starlab_live/00_pta_wga_1col_src1lysis_src3rxn_dst1_hhs_DRY.py
-  [ok  ] star.pta_wga_lysis  confirm token appears in the run card: RUN_SINGLE_COL_PTA_HHS
-  ...
-  all 16 checkable claims hold.
+  Human --> Plan
+  Human --> Permission
+  Agent --> Plan
+  Plan --> Permission
+  Permission -->|allowed read only| Executor
+  Executor --> Hardware
+  Plan --> Evidence
+  Permission --> Evidence
+  Executor --> Evidence
+  Hardware --> Evidence
+  Evidence --> Samples
+  Evidence --> QC
+  Samples --> QC
+  QC -->|pass only| Learning
+  Learning --> Agent
+  QC -->|fail, hold, or error| Human
 ```
 
-For every operation this package calls validated, `doctor` confirms the run card really
-exists at that path in your plr-tested checkout, and that the confirm token the ledger
-tells you to type really appears in that script. It exits non-zero on drift. This caught a
-real bug during development: every STAR step was citing `RUN_TARGETED_PCR_ODTC_LIDDED_FULL`,
-when the PTA/WGA run card actually gates on `RUN_SINGLE_COL_PTA_HHS`. The ledger was
-telling an operator to type a token that would have refused the run.
+The existing autonomy ledger remains the execution source of truth. The new evidence
+spine wraps it; it does not provide a second path around its guards.
 
-What it deliberately **cannot** check is `evidence` -- whether an operator really watched
-the thing run. That is prose about the physical world and no checker reaches it, which is
-why the evidence strings stay narrow and carry their own caveats.
+See [the architecture](docs/architecture.md), [the evidence model](docs/evidence-model.md),
+and [the first pilot plan](docs/pilot.md).
 
-## Three things it refuses to do
+## What the lab can honestly do today
 
-1. **Let an instrument's reputation transfer to a step.** plr-tested has a validated
-   PTA/WGA addition and a validated targeted PCR choreography; it has no validated bead cleanup
-   and no validated library pooling. So those cost out as manual even though they name a
-   validated instrument. A federated step is supervised only when a run card for *that
-   step* has been proven. The whole-genome sequencing leg that does count is dry-validated, and the ledger
-   says so in the same breath: its wet form has never run.
-2. **Model only part of what would refuse a run.** `GuardedReplayer.setup()` has three
-   preconditions, not one: coverage, an endpoint, and a transport a connection class can
-   open. `DEFAULT_TRANSPORT` is UNKNOWN for three of these instruments by design, so a
-   decode alone does not make one dialable.
-3. **Skip ahead.** The executor performs the zero-decode reads and stops at the first step
-   needing a human, with a card naming the bench work that would remove the stop. A run
-   that faked a sort and then truthfully read a run folder would be worse than useless --
-   it would look like a working pipeline.
+With the current `plr-reverse-engineer` maps, a real `plr-tested` checkout wired in, and
+run-specific AVITI endpoint/folder values still unbound, the 18-step low-input genomics
+reference flow costs as:
 
-## The registry derives itself
+| Verdict | Steps | Meaning |
+| --- | ---: | --- |
+| automated | 1 | USB discovery enumerates candidate serial links headlessly |
+| supervised | 2 | operation-specific run cards exist; a human remains present |
+| written | 1 | the run card is dry-clean but has never run wet |
+| blocked | 10 | eight command-map steps plus two missing runtime bindings |
+| manual | 3 | physical loading or an operation with no validated run card |
+| broken | 1 | the Tecan read card ran on hardware and failed deterministically |
 
-Instruments are not listed here. They are read from `plr_re.protocolmap.SEEDS`, so this
-package cannot drift out of sync with the repo that actually does the reverse-engineering,
-and a new playbook joins the lab with no edit. Install a plr-re that has the Integra
-VIAFLO 96 playbook and it registers itself, roles and all, and appears in the queue.
+**An unattended run reaches step 1 of 18 before it stops.** There are also five physical
+plate hops that decoding cannot remove.
 
-That also means what you see depends on the plr-re you installed: `main` has five
-instruments today, and a branch with an unmerged playbook has six. An instrument this
-package knows about but your plr-re does not costs out as unavailable rather than crashing.
+The previous implementation overstated two capabilities. It called network probes
+automated even when no endpoint was configured, and trusted a decode artifact to label
+its own request bytes read-only. Network probes are blocked when no endpoint is
+configured; malformed or unreachable endpoints fail the armed preflight. Decoded map
+commands remain supervised because a map cannot independently prove what its bytes do.
+Both boundaries are covered by tests. The live CLI remains the source of truth:
 
-## Reference protocols
+```bash
+autonomous-lab stock
+autonomous-lab ledger single_cell_genomics --plr-tested ../plr-tested
+autonomous-lab gaps
+autonomous-lab doctor --plr-tested ../plr-tested
+autonomous-lab run single_cell_genomics
+```
 
-- `single_cell_genomics` -- Namocell sort, STAR PTA/WGA, ODTC targeted PCR round 1, STAR library
-  prep, AVITI sequencing, run-folder readout.
-- `small_molecule_qc` -- VIAFLO 96 serial dilution, Biotage V-10 solvent removal, Agilent
-  6530 Q-TOF LC/MS.
+## The evidence contract
 
-The genomics one quantifies the library on the plate reader before it pools and sequences,
-because that is what you actually do, and because skipping it would score better and be
-worth less.
+Every event declares one of four origins:
 
-Both are written to be unflattering. They include the cartridge seating and the flow-cell
-loading that a demo would quietly omit, because a plan that skipped them would produce a
-better number and be worth nothing.
+| Level | Meaning |
+| --- | --- |
+| `modeled` | computed or generated; no simulated or physical observation |
+| `simulated_execution` | produced by a device or process simulator |
+| `measured` | read from the physical world |
+| `hardware_validated` | measured through a separately validated integration |
 
-Write your own by declaring `Step`s and the `Artifact`s they move; artifacts marked
-physical get counted as plate hops. A protocol that references an artifact it does not
-declare, or consumes one nothing produces, is refused before it is costed.
+Each JSONL event contains a sequence number, run identifier, actor label, event kind,
+payload, previous hash, and its own hash. Mutation, interior deletion, insertion, and
+reordering break verification. Removing an unanchored tail changes the head but requires
+an external expected head to detect. Raw reader files, images, and omics matrices stay
+outside the ledger; measurement events may carry their SHA-256 digests.
 
-## Safety
+Executor run starts also seal protocol and workcell digests, the relevant ProtocolMaps,
+the Clair and plr-re source identities, and the exact external run-card files consulted
+while costing federated capability claims.
 
-This package schedules and reports. It never actuates. `run --armed` performs only the
-read-only operations -- enumerating a USB bus, probing a port, reading a run folder --
-and there is no flag that moves an instrument. Anything that does goes through plr-re's
-controllers, behind their own `armed` and `allow_actuation` switches, with a human
+The chain is tamper-evident, not a signature or identity system. A production deployment
+should sign and externally anchor chain heads and add authentication, authorization, and
+electronic-signature policy.
+
+The machine-readable event contract is in
+[`schemas/evidence-event.schema.json`](schemas/evidence-event.schema.json).
+
+## The sample contract
+
+Protocol `Artifact` objects remain logical types. Per-run `Material` instances carry:
+
+- a material ID and biological sample ID;
+- type, amount, unit, container, well/position, and location;
+- immutable parent material IDs;
+- status: active, quarantined, released, consumed, or disposed;
+- measurements with units, evidence level, source event, and optional source-file hash.
+
+Splits and pools form a material graph. Moves and status changes are events, so current
+state and complete ancestry are projections of evidence rather than mutable rows. Every
+derivation records the quantity allocated from each parent. Conservative transfers
+cannot create quantity or cumulatively overdraw a parent; yield-gaining transformations
+must be labeled explicitly with a scientific reason. Multi-sample pools receive a new
+sample identity.
+
+## The learning contract
+
+`EvidenceBoundOptimizer` provides a deterministic, stdlib-only advisory baseline:
+
+- real-unit parameter bounds are validated before use;
+- quarantined observations remain visible but never train the surrogate;
+- observations below the configured evidence floor are excluded;
+- gate policies, threshold math, run/material links, and source measurements are
+  revalidated when an observation is replayed for training;
+- scientific feasibility comes from separately sealed boolean constraint attestations;
+  Clair validates their IDs, evidence, freshness, and `0`/`1` label consistency but does
+  not invent or recompute the upstream scientific rule;
+- policy and training-set digests are recorded on every proposal;
+- duplicate candidate designs and proposal IDs are refused;
+- uncertainty and feasibility are explicitly marked heuristic and uncalibrated; and
+- every proposal is written with `execution_allowed: false`.
+
+This makes the integration seam real without laundering a toy optimizer into a safety
+claim. A production GP/BO or conformal model can replace the proposer behind the same
+contract. It still cannot bypass protocol validation, scientific QC, physical readiness,
+or human authorization.
+
+## The autonomy ledger
+
+The original ledger still derives its claims rather than trusting labels:
+
+- instrument inventory comes from `plr_re.protocolmap.SEEDS`;
+- command-map structure and immutable actuation labels are checked against the seed, but
+  even a complete map remains supervised because it cannot approve its own request bytes;
+- a federated step is supervised only when the exact operation's entry, run card, and
+  confirmation token resolve in the configured checkout;
+- `doctor` checks run-card paths and confirmation tokens against `plr-tested`;
+- execution never skips past the first unsupported step; and
+- physical handoffs stay visible outside the autonomy percentage.
+
+The reverse-engineering queue is ranked by complete instrument maps because plr-re's
+coverage gate is all-or-nothing:
+
+```bash
+autonomous-lab gaps
+```
+
+At the current map state, Namocell is first because completing its map frees five steps.
+
+## Safety boundary
+
+`run --armed` is a deliberately narrow name inherited from plr-re. In this package it
+can perform only built-in zero-decode reads such as USB enumeration, socket probes, and
+run-folder reads. It never transmits a request derived from a ProtocolMap, even when the
+map labels that command non-actuating. The built-in HTTP service probe does issue a
+read-only `GET /` to a configured endpoint after its socket opens; it sends no
+state-changing request. There is no CLI flag in this repository that moves liquid,
+heats, opens a tray, starts a sort, or begins a sequencing run. Physical actuation
+remains in validated instrument-specific systems with their own guards and an operator
 present.
 
-Note also plr-tested's hard constraint, which any scheduler built on this must respect:
-one driver process per instrument. Two STAR clients raise `USBError [Errno 16] Resource
-busy`, and on the ODTC the collision is quieter, because a second process re-registers the
-event receiver and silently steals the first one's callbacks.
+## Repository map
 
-## Tests
-
+```text
+autonomous_lab/
+  model.py       protocol-level types and verdict vocabulary
+  registry.py    reverse-engineered and federated instrument truth
+  workcell.py    local bench configuration and map resolution
+  ledger.py      static autonomy costing and reverse-engineering priorities
+  executor.py    stop-at-first-boundary read-only execution
+  evidence.py    append-only hash-chained run events
+  samples.py     material identity, measurements, custody, and lineage
+  gates.py       deterministic evidence-aware QC
+  learning.py    bounded advisory process proposals
+  demo.py        integrated device-free low-input genomics loop
+  doctor.py      cross-repository validation-claim checker
+  cli.py         reporting, execution, verification, tracing, and demo commands
+docs/
+schemas/
+tests/
 ```
-pip install -e '.[dev]' && pytest
+
+## Verification
+
+```bash
+pip install -e '.[dev]'
+pytest -q
+ruff check autonomous_lab tests
 ```
 
-46 device-free tests. The ones that matter most try to make the ledger lie: claim a step
-is automated when its command is undecoded, claim a decoded command is runnable while its
-siblings are not, claim a federated leg runs when no run card was ever proven for it. The
-doctor tests prove the checker itself catches a renamed run card and a stale token,
-because a checker that passed unconditionally would just launder the assertion.
+The suite is device-free. Its highest-value tests try to make the system lie: mutate
+evidence, truncate a live ledger, reuse a run or sample ID, overdraw or derive from a
+quarantined parent, falsify custody, fabricate a gate pass, flip sealed feasibility,
+train on a mechanical fault, emit duplicate or out-of-bounds proposals, claim a missing
+endpoint is automated, or let a proposal become permission.
+
+CI also runs the CLI, checks federated drift on a schedule, and enforces ASCII source.
