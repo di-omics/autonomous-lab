@@ -20,9 +20,10 @@ from .doctor import check_federated, render as render_checks
 from .executor import Executor
 from .ledger import build_ledger, rank_unlocks
 from .model import Verdict
+from .record import RunRecord
 from .registry import FEDERATED, registry
 from .workcell import Workcell
-from . import protocols
+from . import acceptance, control, criteria, permission, protocols, samples
 
 
 def _log_setup():
@@ -146,6 +147,143 @@ def _run(args) -> int:
   return 0 if report.handoff is None else 1
 
 
+def _gates(args) -> int:
+  """The acceptance rubrics, and whether this bench can actually apply them."""
+  wc = _workcell(args)
+  blocked = 0
+  for name in sorted(criteria.REFERENCE_GATES):
+    gate = criteria.get(name)
+    can, why = gate.measurable(wc)
+    ready, unpinned = gate.ready_for_hardware()
+    print(f"\n  {gate.name}")
+    print(f"    guards       {gate.guards}")
+    print(f"    measured by  {gate.produced_by[0]}.{gate.produced_by[1]}")
+    print(f"    measurable   {'yes' if can else 'NO'}  {why}")
+    for c in gate.criteria:
+      tag = "" if c.origin is acceptance.Origin.TRANSCRIBED else f"  [{c.origin.value.upper()}]"
+      print(f"      {c.describe()}{tag}")
+      print(f"        source: {c.source}")
+    if not ready:
+      blocked += 1
+      print("    NOT READY FOR HARDWARE:")
+      for r in unpinned:
+        print(f"      {r}")
+    if gate.note:
+      print(f"    note         {gate.note}")
+  transcribed = sum(
+    1 for g in criteria.REFERENCE_GATES.values() for c in g.criteria
+    if c.origin is acceptance.Origin.TRANSCRIBED
+  )
+  total = sum(len(g.criteria) for g in criteria.REFERENCE_GATES.values())
+  print(f"\n  {transcribed} of {total} thresholds are transcribed from a citable source.")
+  print(f"  {blocked} of {len(criteria.REFERENCE_GATES)} rubrics cannot gate material yet.")
+  return 1 if blocked else 0
+
+
+def _provenance(args) -> int:
+  """What a bad result at the end of the reference run would implicate."""
+  for indexed in (False, True):
+    lin = samples.reference_lineage(indexed=indexed)
+    s = lin.summary("pool")
+    print(f"\n  pooled library, index map {'recorded' if indexed else 'NOT recorded'}:")
+    print(f"    attribution        {s['attribution']}")
+    print(f"    indistinguishable  {s['indistinguishable']} contributor(s)")
+    print(f"    weakest witness    {s['weakest_witness']}")
+    print(f"    events in chain    {s['events']}")
+  print(
+    "\n  Recording an index per well is the entire difference between a bad library that\n"
+    "  names a well and one that only names a plate. Neither run is machine-witnessed:\n"
+    "  no step in this protocol has an instrument that writes provenance today."
+  )
+  return 0
+
+
+def _session(args) -> int:
+  """Propose every step of a protocol and let the gates decide. The integrated view."""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  sess = permission.Session(
+    workcell=wc,
+    lineage=samples.reference_lineage(),
+    record=RunRecord(f"session:{p.name}"),
+  )
+  for step in p.steps:
+    sess.request(step, proposer=args.proposer)
+  print(f"protocol: {p.name}\n{p.summary}\n")
+  for d in sess.decisions:
+    print(d.render())
+    print()
+  orders = sess.work_orders()
+  print(f"work orders ({len(orders)} distinct, from {len(sess.refused())} refusals):")
+  for i, a in enumerate(orders, 1):
+    print(f"  {i}. {a}")
+  print(f"\n  {sess.record.verify().render()}")
+  print(f"  head {sess.record.seal()[:16]}...")
+  if args.write_record:
+    sess.record.to_jsonl(args.write_record)
+    print(f"  record written to {args.write_record}")
+  return 0 if not sess.refused() else 1
+
+
+def _observe(args) -> int:
+  """Append what actually happened to a run record. The other half of the loop.
+
+  Verifies the chain before extending it. Appending to a record whose history has been
+  edited would launder the edit under a fresh valid digest, which is the one thing a
+  tamper-evident log must not let you do casually.
+  """
+  rec = RunRecord.from_jsonl(args.record)
+  check = rec.verify()
+  if not check.ok:
+    print(f"error: refusing to extend a broken chain. {check.render()}", file=sys.stderr)
+    return 1
+  rec.append("outcome", step=args.step, ok=not args.failed, note=args.note or "")
+  rec.to_jsonl(args.record)
+  print(f"recorded {args.step} {'FAILED' if args.failed else 'ok'}; {len(rec)} entries")
+  print(f"  head {rec.seal()[:16]}...")
+  return 0
+
+
+def _control(args) -> int:
+  """What the runs so far say about which step to fix first."""
+  p = protocols.get(args.protocol)
+  if not args.record:
+    print(
+      "no run record given, so there is nothing to learn from.\n\n"
+      "  The reliability model has no observations, and a ranking built on a prior\n"
+      "  nobody chose would be fiction at the top of a queue meant to direct real work.\n"
+      "  Produce one with:  autonomous-lab session <protocol> --write-record run.jsonl\n"
+      "  then append 'outcome' entries as steps actually run.",
+      file=sys.stderr,
+    )
+    return 2
+  rec = RunRecord.from_jsonl(args.record)
+  check = rec.verify()
+  print(f"  {check.render()}")
+  if not check.ok:
+    print("  refusing to learn from a record whose chain does not hold.", file=sys.stderr)
+    return 1
+  model = control.ReliabilityModel.from_record(rec)
+  if not model.known_steps():
+    print("\n  the record has no 'outcome' entries; nothing has been observed to run yet.")
+    return 2
+  print(f"\n  per-step reliability ({len(model.known_steps())} step(s) observed):")
+  for step in model.known_steps():
+    print(f"    {model.of(step).render()}")
+  ranked = model.rank_by_expected_waste(p)
+  if ranked:
+    print("\n  ranked by expected waste (failure rate x steps already invested):")
+    print("    A step that fails early costs little. The same rate at step 17 throws")
+    print("    away everything before it, and that is what should be fixed first.\n")
+    for w in ranked:
+      tag = "" if w.informative else "   (too few runs to act on)"
+      print(
+        f"    {w.step:<32} step {w.position:2d}   {w.failure_rate:5.1%} fail   "
+        f"expected waste {w.expected_waste:5.2f} step(s){tag}"
+      )
+  return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
   p = argparse.ArgumentParser(prog="autonomous-lab", description=__doc__)
   sub = p.add_subparsers(dest="cmd", required=True)
@@ -183,6 +321,37 @@ def build_parser() -> argparse.ArgumentParser:
   )
   common(dc)
   dc.set_defaults(func=_doctor)
+
+  gt = sub.add_parser("gates", help="the acceptance rubrics, and whether this bench can apply them")
+  common(gt)
+  gt.set_defaults(func=_gates)
+
+  pv = sub.add_parser("provenance", help="what a bad result would implicate, with and without indexing")
+  common(pv)
+  pv.set_defaults(func=_provenance)
+
+  ss = sub.add_parser(
+    "session", help="propose every step and let the gates decide; the integrated view"
+  )
+  ss.add_argument("protocol")
+  ss.add_argument("--proposer", default="agent:planner", help="recorded, never consulted")
+  ss.add_argument("--write-record", dest="write_record", help="write the run record as JSONL")
+  common(ss)
+  ss.set_defaults(func=_session)
+
+  ob = sub.add_parser("observe", help="append what actually happened to a run record")
+  ob.add_argument("--record", required=True, help="the run record JSONL to extend")
+  ob.add_argument("--step", required=True, help="the operation that ran")
+  ob.add_argument("--failed", action="store_true", help="record a failure (default: success)")
+  ob.add_argument("--note", help="what happened, for a human reading this later")
+  common(ob)
+  ob.set_defaults(func=_observe)
+
+  ct = sub.add_parser("control", help="what the runs so far say about which step to fix first")
+  ct.add_argument("protocol", nargs="?", default="single_cell_genomics")
+  ct.add_argument("--record", help="a run record JSONL to learn from")
+  common(ct)
+  ct.set_defaults(func=_control)
 
   rn = sub.add_parser("run", help="run a protocol as far as it honestly goes")
   rn.add_argument("protocol")

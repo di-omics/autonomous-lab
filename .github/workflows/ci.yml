@@ -39,8 +39,22 @@ jobs:
         run: |
           autonomous-lab stock
           autonomous-lab protocols
+          autonomous-lab provenance
           autonomous-lab ledger single_cell_genomics || [ $? -eq 1 ]
           autonomous-lab gaps || [ $? -eq 1 ]
+          # Non-zero is correct: a rubric with an unpinned threshold cannot gate material,
+          # and the protocol cannot run unattended. Both say so by exiting 1.
+          autonomous-lab gates || [ $? -eq 1 ]
+          autonomous-lab session single_cell_genomics || [ $? -eq 1 ]
+
+      - name: The feedback loop closes
+        # session writes a record, observe extends it, control learns from it. Each step
+        # verifies the hash chain before touching it, so this also exercises the record.
+        run: |
+          autonomous-lab session single_cell_genomics --write-record run.jsonl || [ $? -eq 1 ]
+          autonomous-lab observe --record run.jsonl --step pta_wga_lysis
+          autonomous-lab observe --record run.jsonl --step pta_wga_lysis --failed
+          autonomous-lab control single_cell_genomics --record run.jsonl
 
   lint:
     runs-on: ubuntu-latest
