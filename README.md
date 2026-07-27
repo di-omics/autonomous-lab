@@ -3,6 +3,8 @@
 [![CI](https://github.com/di-omics/autonomous-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/di-omics/autonomous-lab/actions/workflows/ci.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 
+Whether a lab can close a loop from hypothesis to evidence, and which leg breaks first.
+
 **The evidence and decision layer between an AI proposal and a physical laboratory.**
 
 `autonomous-lab` answers two questions without bluffing:
@@ -45,6 +47,10 @@ prove that the instrument command exists, is decoded, has a usable transport, an
 allowed to actuate. Every observation and decision can be committed to an append-only
 record for replay.
 
+At protocol scale, execution is only one of four legs. `loop PROTOCOL` separately computes
+whether the lab can execute, measure, decide, and record; repairing a driver cannot substitute
+for an evaluable assay, a failure detector, or an observed chain of custody.
+
 See [Making an existing laboratory AI-native](docs/AI_NATIVE_WORKCELL.md) for the
 cross-repository architecture and the role of the overarching domain expert.
 
@@ -76,6 +82,18 @@ autonomous-lab throughput --samples 96
 
 # Cost a real reference workflow against the current instrument maps.
 autonomous-lab ledger single_cell_genomics
+
+# Ask which of execute, measure, decide, and record breaks for that protocol.
+autonomous-lab loop single_cell_genomics
+
+# Inspect protocol QC, failure detection, vision, provenance, and biological lineage.
+autonomous-lab qc single_cell_genomics
+autonomous-lab failures single_cell_genomics
+autonomous-lab vision
+autonomous-lab throughput single_cell_genomics
+autonomous-lab provenance single_cell_genomics
+autonomous-lab lineage single_cell_genomics
+autonomous-lab knowledge
 ```
 
 The failure scenarios exit non-zero on purpose, so the same commands work as CI or
@@ -103,11 +121,11 @@ audit chain: VALID - 7 events form a valid chain
 | Capability | What the code does now | Evidence boundary |
 | --- | --- | --- |
 | Feedback control and QC | Applies numeric or categorical acceptance gates to plate-reader, assay, or instrument observations; returns continue, retry, recover, escalate, or stop | Demo observations and ranges are synthetic until replaced by a lab-approved policy and live integration |
-| Computer vision and error handling | Gates labware pose, seal presence, liquid presence, or other visible state; encodes the exact recovery when a benchmark fails | Vision cannot stand in for non-visible concentration, interlock, or instrument state |
+| Computer vision and error handling | Gates labware pose, seal presence, liquid presence, or other visible state; classifies visible, indirectly visible, and physically invisible failures; encodes the exact recovery when a benchmark fails | A detector is not a safety device until its miss rate is measured on held-out real failures; vision cannot stand in for non-visible concentration, interlock, or instrument state |
 | Workcell orchestration | Requires an exact contract fingerprint in an in-memory deployment approval registry; derives action scope, budgets, resources, policies, and adapters from it; shares process-wide leases by workcell namespace; issues expiring attempt permits; checks post-operation evidence before provenance can advance | Injected adapters retain their hardware arming boundary and must enforce persistent idempotency at the command boundary; durable cross-process leases and signed/durable approvals are still owed |
-| Throughput | Computes per-stage capacity, setup and handoff overhead, parallel-resource effects, the bottleneck, and a conservative serial upper bound | Every duration is labeled measured or assumed; the bundled example is assumed |
-| Sample tracking and provenance | Records registration, derivation, movement, consumption, uncertainty quarantine, and lineage in the same hash-chained run record as observations and decisions | Duplicate IDs, impossible derivations, post-consumption moves, and reuse of uncertain samples are refused |
-| Laboratory intelligence | Turns tacit expert judgment into fingerprinted `ExpertPolicy` gates with required evidence sources, freshness limits, rationale, failure action, and named recovery | A model cannot waive a gate, reuse a policy for an unrelated operation contract, or promote missing/stale evidence into permission |
+| Throughput | Refuses protocol plates-per-day when steps are untimed, and separately computes per-stage capacity, setup and handoff overhead, parallel-resource effects, the bottleneck, and a conservative serial upper bound for an explicitly illustrative plan | Every duration is labeled measured or assumed; the bundled standalone example is assumed |
+| Sample tracking and provenance | Records registration, derivation, movement, consumption, uncertainty quarantine, and container lineage in the hash-chained task record; separately traces protocol transforms from a result back to the biological unit | Duplicate IDs, impossible derivations, post-consumption moves, reuse of uncertain samples, and undeclared identity-changing transforms are refused |
+| Laboratory intelligence | Turns tacit expert judgment into fingerprinted `ExpertPolicy` gates with required evidence sources, freshness limits, rationale, failure action, and named recovery; records the benchmark a robot must meet before an operation is trusted | A model cannot waive a gate, reuse a policy for an unrelated operation contract, promote missing/stale evidence into permission, or treat an unbenchmarked operation as proven |
 
 ## What exists today
 
@@ -142,6 +160,12 @@ than the flat 17% autonomy number: an automatable read near the end is unreachab
 an earlier sample transfer never happened. The ledger also reports five physical plate
 hops that decoding cannot remove; a person or plate mover must cover them.
 
+`autonomous-lab loop single_cell_genomics` resolves the same protocol into four separate
+verdicts: **EXECUTE**, **MEASURE**, **DECIDE**, and **RECORD**. Each broken leg implies a
+different intervention. Reverse-engineering repairs execution; a usable assay repairs
+measurement; an effective detection path repairs decision; barcodes or a reporting arm
+repair custody. One autonomy percentage cannot safely collapse those budgets.
+
 ### 2. Deterministic QC, vision, and telemetry gates
 
 `autonomous_lab.intelligence` separates evidence sources because they establish different
@@ -156,6 +180,16 @@ Missing, stale, future-dated, malformed, or wrong-source evidence stops. Timezon
 timestamps are normalized before choosing the latest observation. A policy can select a
 bounded retry or named expert recovery for an observed failure, but it cannot soften
 unknown physical state.
+
+The protocol-level diagnostics test whether those inputs exist before claiming supervision:
+
+- `qc PROTOCOL` refuses a gate with a missing measurement and separately flags an
+  inappropriate assay, because a number can arrive and still establish the wrong fact.
+- `vision` distinguishes visible, indirectly visible, and physically invisible conditions;
+  more training data cannot recover information the photons do not contain.
+- `failures PROTOCOL` resolves each declared detection path against the actual ledger,
+  evaluable gates, and available vision, then exits non-zero while destructive failures
+  remain silent.
 
 ### 3. Auditable run and sample provenance
 
@@ -172,16 +206,31 @@ decision record and material record therefore share one process-local, in-memory
 instead of drifting in separate databases. Durable storage and a laboratory source of
 truth remain production work.
 
+`provenance PROTOCOL` asks a complementary question about the reference workflow. Its
+attestations distinguish `confirmed` instrument reports, `witnessed` human observations,
+and `asserted` software intent. Asserted intent is not physical evidence. Its hash links make
+edits and splices detectable, but do not make the recorded event true.
+
+Container custody is also not biological identity. `lineage PROTOCOL` traces declared
+transforms from a result back to a requested unit such as one cell. It distinguishes
+addressed wells, tagged material, bulk material that was never individuated, and material
+whose identity was destroyed by merging. Pooling before a durable tag loses attribution
+irreversibly; finishing every instrument decode cannot recover it. The report names the
+identity linchpin, post-pooling measurements that are blind to one failed well, unobserved
+custody hops, and unmeasured terms such as index misassignment. A material-moving step that
+does not declare its identity transform is refused instead of assumed to preserve lineage.
+
 ### 4. Honest throughput planning
 
-`autonomous_lab.throughput` names the resource that limits samples per hour and includes
-setup, transfer, batch size, and parallel instruments. It also keeps a `measured` flag on
-every stage. One assumed stage makes the whole report an assumption rather than measured
-performance.
+`autonomous_lab.throughput` answers two deliberately different questions. With a protocol,
+`throughput PROTOCOL` computes only from measured step durations and returns `NOT COMPUTABLE`
+while any required duration is missing; it will not format guesses as plates per day. With
+no protocol, `throughput --samples N` runs the standalone illustrative capacity plan, names
+the bottleneck, and includes setup, transfer, batch size, and parallel instruments. Every
+stage keeps a `measured` flag, so one assumed stage labels the whole report as assumed.
 
-This is intentionally a transparent capacity model, not a production scheduler. The
-serial upper bound is conservative until safe stage overlap and measured resource timing
-are proved.
+Both paths are transparent capacity models, not production schedulers. The serial upper
+bound is conservative until safe stage overlap and measured resource timing are proved.
 
 ### 5. Policy-gated workcell orchestration
 
@@ -221,6 +270,11 @@ Untyped results, wrong permits, post-operation evidence failures, and unexpected
 fail closed. Any possibly changed sample becomes `uncertain` rather than being silently
 reported at the possible destination.
 
+`autonomous-lab knowledge` exposes the other half of expert orchestration: each judgment
+states when it applies, what to do, why, what it guards against, its evidence basis, and
+whether this lab validated it. Robot operations are untrusted by default until a named
+benchmark is met; absence of a measurement is not evidence of adequacy.
+
 ## Instrument control: what is real
 
 The installed `plr-reverse-engineer` registry currently exposes five reverse-engineered
@@ -235,9 +289,15 @@ The federated STAR, ODTC, HHS, and Tecan paths come from `plr-tested`. Run:
 autonomous-lab doctor --plr-tested ../plr-tested
 ```
 
-The checker currently verifies 17 paths and confirmation-token claims against the real
-checkout. It deliberately cannot verify prose about what a human watched in the physical
-world, so every evidence string keeps its caveats.
+The checker verifies cited run-card paths and confirmation tokens, then cross-checks every
+modelled operation against `plr-tested/evidence/manifest.json`: status, run card, token, and
+manifest coverage. The manifest is the instrument-owning repository's machine-readable
+record of what met hardware under its own CI rules. A missing manifest or disagreement is a
+failure, not a skipped check; the repository with the instrument wins.
+
+Neither pass can verify whether a human actually watched the physical run. That claim stays
+narrow prose with its caveats: a hash-linked manifest can detect drift, not manufacture
+physical evidence.
 
 The known plate-reader failure remains first-class: Tecan setup and tray motion passed,
 but absorbance fails deterministically at the Y-stage command and has never returned an
@@ -255,8 +315,16 @@ OD matrix. That is `broken`, not `manual` and not `automated`.
 | `autonomous-lab run NAME` | Dry-run scheduling and stop at the first handoff |
 | `autonomous-lab run NAME --armed` | Perform only real read-only operations; never actuates |
 | `autonomous-lab loop --scenario NAME` | Exercise QC, vision, telemetry, recovery, and audit behavior on synthetic evidence |
+| `autonomous-lab loop NAME` | Compute the protocol's execute, measure, decide, and record legs |
+| `autonomous-lab qc NAME` | Report whether declared QC gates can be evaluated and whether they use an appropriate assay |
+| `autonomous-lab failures NAME` | Resolve failure detection against the evidence paths that actually exist |
+| `autonomous-lab vision` | Report visible, indirectly visible, and physically invisible checks |
+| `autonomous-lab provenance NAME` | Report confirmed, witnessed, and asserted protocol events plus custody gaps |
+| `autonomous-lab lineage NAME` | Trace a result back to a biological unit across declared material transforms |
+| `autonomous-lab knowledge` | Show encoded expert judgments and robot-validation benchmarks |
 | `autonomous-lab orchestrate --scenario NAME` | Exercise reviewed operation contracts, atomic sample/resource locks, execution permits, typed recovery, postconditions, and provenance |
-| `autonomous-lab throughput --samples N` | Report capacity and bottleneck from explicit assumptions |
+| `autonomous-lab throughput --samples N` | Report standalone illustrative capacity and its bottleneck from explicit assumptions |
+| `autonomous-lab throughput NAME` | Compute measured protocol throughput, or refuse when required timing is absent |
 
 Reference protocols:
 
@@ -300,14 +368,17 @@ pip install -e '.[dev]'
 pytest -q
 ```
 
-The suite currently contains **162 device-free tests**. The critical tests try to make the
+The suite currently contains **258 device-free tests**. The critical tests try to make the
 system lie: assert automation for an undecoded command, use vision in place of assay QC,
 continue with stale or missing evidence, misorder timezone offsets, tamper with a run
 record, race ledger and sample transitions, reuse a run, sample, task ID, or stale lease,
 pair a policy with the wrong operation or sample, omit a mandatory resource, split one
 workcell across manager instances, invoke the wrong recovery, accept expired evidence or
 permits, mutate returned adapter data, replay ambiguous motion, cancel after possible
-actuation, double-book a robot, hide transfer overhead, or skip ahead after a stop.
+actuation, double-book a robot, hide transfer overhead, pass an empty QC gate vacuously,
+claim an unavailable detector caught a failure, invent throughput over untimed steps,
+report intact lineage through identity-destroying pooling, accept a stale federated
+manifest, or skip ahead after a stop.
 
 CI runs on Python 3.9 and 3.12, lints with Ruff, and enforces ASCII-only tracked text.
 

@@ -103,6 +103,28 @@ class Artifact:
   note: str = ""
 
 
+class Transform(str, Enum):
+  """What a step does to the IDENTITY of the material, as opposed to its chemistry.
+
+  This is a description of the physics, in the same category as `Artifact.physical`, and
+  deliberately not in the same category as a verdict. An author declares it because only
+  an author knows whether a step splits material or merges it; nothing about that claim
+  flatters the lab, and `lineage` refuses to report on a protocol whose material-moving
+  steps leave it undeclared.
+
+  MERGE is the load-bearing one. Pooling is the moment attribution can be destroyed
+  permanently, and whether it is destroyed depends entirely on whether a TAG came first.
+  """
+
+  ENTER = "enter"  # material arrives with an external identity
+  SPLIT = "split"  # one container into many addresses; this is where identity is created
+  MOVE = "move"  # container to container, addressing preserved
+  TAG = "tag"  # attach a distinguishing label that survives being merged
+  MERGE = "merge"  # many into one; destroys attribution unless the inputs were tagged
+  MEASURE = "measure"  # material to data, bound to whatever it was read from
+  CONSUME = "consume"  # material irreversibly used up, with nothing handed back
+
+
 @dataclass(frozen=True)
 class Step:
   """One operation on one instrument.
@@ -122,6 +144,23 @@ class Step:
   # Set when the step is a bench action no code path covers (seating a cartridge,
   # carrying a plate). Forces MANUAL regardless of what the instrument can do.
   manual_reason: Optional[str] = None
+  # What this step does to material identity. Read only by `lineage`, which refuses to
+  # report when a step moves physical material and leaves this None.
+  transform: Optional[Transform] = None
+  # For SPLIT: how many addressable positions the material lands in. For TAG: how many
+  # distinct labels are available, which is what makes tag collision computable.
+  fanout: Optional[int] = None
+  # For MEASURE: whether this instrument can resolve the labels a TAG step applied. A
+  # sequencer reads an index and demultiplexes; a plate reader looking at the same tube
+  # returns one number for the whole pool. The difference decides whether a measurement
+  # taken after pooling says anything about an individual unit.
+  reads_tags: bool = False
+  # Which artifact this step inherits identity from, when that is not simply the first
+  # thing it consumes. Read ONLY by `lineage`, and deliberately separate from `consumes`:
+  # `consumes` drives the physical-hop count, so naming an input here cannot invent a
+  # plate hop that nobody carries. A step already standing on its material -- the V-10
+  # running a method on vials already in its rack -- says so here and adds no hop.
+  lineage_input: Optional[str] = None
 
 
 @dataclass(frozen=True)

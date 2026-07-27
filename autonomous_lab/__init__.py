@@ -17,10 +17,31 @@ The answers are currently bleak, and that is the feature. Nothing here can flatt
 lab: automation is derived from the resolved ProtocolMap, missing QC stops a decision,
 and the reference protocols include the cartridge seating and flow-cell loading that a
 demo would quietly omit.
+
+Executing a protocol is only the first of four things a lab must do to close a loop, so
+five further layers ask whether the rest hold:
+
+    from autonomous_lab import loop_closure_for, protocols
+
+    closure = loop_closure_for(protocols.get("single_cell_genomics"))
+    closure.closes    # False
+    closure.broken()  # and which of execute/measure/decide/record failed, and why
+
+  qc            can a QC gate be evaluated at all, or does its input come from a broken
+                instrument? A gate that cannot fire makes a run look supervised and is not.
+  vision        what a camera could verify, and the failures no camera ever resolves.
+  recovery      what goes wrong, whether anything here would notice, and how late.
+  throughput    plates per day -- or an honest refusal, when nothing has been timed.
+  provenance    a tamper-evident run record, and where the custody chain breaks.
+  lineage       which cell a read came from -- and whether pooling already destroyed the
+                answer, which is a different question from whether the plate was tracked.
+  intelligence  the tacit expert judgment and the benchmarks a robot must meet first.
 """
 
 from .executor import Executor, Handoff, RunReport, StepResult
 from .intelligence import (
+  Benchmark,
+  BenchmarkStatus,
   Comparator,
   DecisionAction,
   DecisionEngine,
@@ -29,11 +50,31 @@ from .intelligence import (
   ExpertPolicy,
   GateResult,
   GateStatus,
+  Judgment,
+  Leg,
+  LoopClosure,
   Observation,
   PermissionDecision,
+  knowledge_summary,
+  loop_closure,
+  trusted_for,
 )
 from .ledger import Ledger, StepVerdict, Unlock, build_ledger, cost_step, rank_unlocks
-from .model import Artifact, Protocol, Role, Step, Tier, Verdict, ZeroDecodeOp
+from .lineage import (
+  MISASSIGNMENT,
+  Cohort,
+  LineageEdge,
+  LineageGraph,
+  LineageReport,
+  Misassignment,
+  Separability,
+  Traceability,
+  UndeclaredTransform,
+  build_lineage,
+  lineage_report,
+  undeclared_transforms,
+)
+from .model import Artifact, Protocol, Role, Step, Tier, Transform, Verdict, ZeroDecodeOp
 from .orchestrator import (
   AdapterBinding,
   AttemptRecord,
@@ -58,28 +99,79 @@ from .orchestrator import (
   WorkcellOrchestrator,
   WorkcellTask,
 )
-from .provenance import LedgerEvent, RunLedger, SampleState, SampleTracker
+from .provenance import (
+  Attestation,
+  CustodyGap,
+  Event,
+  LedgerEvent,
+  RunLedger,
+  RunRecord,
+  SampleState,
+  SampleTracker,
+  provenance_report,
+)
+from .qc import Basis, Criterion, Decision, Gate, Readiness, evaluate, gate_report
+from .recovery import Detection, FailureMode, Latency, Severity, recovery_report
 from .registry import FEDERATED, FederatedSpec, InstrumentSpec, declared, registry, spec
-from .throughput import CapacityStage, ThroughputPlan, ThroughputReport
+from .throughput import (
+  CapacityStage,
+  Duration,
+  ThroughputPlan,
+  ThroughputReport,
+  TimeBasis,
+  estimate,
+)
+from .vision import Observable, VisionCapability, VisionRequirement, VisualCheck
 from .workcell import InstrumentConfig, Workcell
 
+
+def loop_closure_for(protocol, workcell=None):
+  """Every layer at once: can this lab close a loop on this protocol?
+
+  A convenience over the five reports, wired in the only order that is correct -- the
+  ledger first, because every other layer is costed against its verdicts rather than
+  recomputing them.
+  """
+  ledger = build_ledger(protocol, workcell)
+  gates = gate_report(protocol.name, ledger)
+  return loop_closure(
+    ledger,
+    gates,
+    recovery_report(protocol, gates, VisionCapability.none()),
+    provenance_report(ledger),
+  )
+
+
 __all__ = [
-  "Artifact",
   "AdapterBinding",
+  "Artifact",
+  "Attestation",
   "AttemptRecord",
+  "Basis",
+  "Benchmark",
+  "BenchmarkStatus",
   "CapacityStage",
+  "Cohort",
   "Comparator",
   "ContractApproval",
   "ContractRegistry",
+  "Criterion",
+  "CustodyGap",
+  "Decision",
   "DecisionAction",
   "DecisionEngine",
+  "Detection",
+  "Duration",
   "EvidenceGate",
   "EvidenceKind",
+  "Event",
   "ExecutionPermit",
   "Executor",
   "ExpertPolicy",
   "FEDERATED",
+  "FailureMode",
   "FederatedSpec",
+  "Gate",
   "GateResult",
   "GateStatus",
   "GuardedOperation",
@@ -87,14 +179,23 @@ __all__ = [
   "Handoff",
   "InstrumentConfig",
   "InstrumentSpec",
+  "Judgment",
+  "Latency",
   "Ledger",
   "LedgerEvent",
+  "Leg",
+  "LineageEdge",
+  "LineageGraph",
+  "LineageReport",
+  "LoopClosure",
+  "MISASSIGNMENT",
+  "Misassignment",
   "Observation",
+  "Observable",
   "OperationContract",
   "OperationResult",
   "OperationStatus",
   "OrchestrationReport",
-  "SampleEffect",
   "PermissionDecision",
   "Protocol",
   "RecoveryPermit",
@@ -106,9 +207,14 @@ __all__ = [
   "ResourceLease",
   "ResourceManager",
   "RunLedger",
+  "RunRecord",
   "RunReport",
+  "SampleEffect",
   "SampleState",
   "SampleTracker",
+  "Readiness",
+  "Separability",
+  "Severity",
   "Step",
   "StepResult",
   "StepVerdict",
@@ -116,16 +222,35 @@ __all__ = [
   "TaskFinalState",
   "ThroughputPlan",
   "ThroughputReport",
+  "TimeBasis",
+  "Traceability",
+  "Transform",
+  "UndeclaredTransform",
   "Unlock",
   "Verdict",
+  "VisionCapability",
+  "VisionRequirement",
+  "VisualCheck",
   "Workcell",
   "WorkcellOrchestrator",
   "WorkcellTask",
   "ZeroDecodeOp",
   "build_ledger",
+  "build_lineage",
   "cost_step",
   "declared",
+  "estimate",
+  "evaluate",
+  "gate_report",
+  "knowledge_summary",
+  "lineage_report",
+  "loop_closure",
+  "loop_closure_for",
+  "provenance_report",
   "rank_unlocks",
+  "recovery_report",
   "registry",
   "spec",
+  "trusted_for",
+  "undeclared_transforms",
 ]

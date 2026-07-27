@@ -53,6 +53,18 @@ jobs:
           autonomous-lab orchestrate --scenario postcondition_failure || [ $? -eq 1 ]
           autonomous-lab orchestrate --scenario ambiguous_driver_timeout || [ $? -eq 1 ]
           autonomous-lab throughput --samples 96
+          autonomous-lab knowledge
+          # Each of these exits 1 because the lab cannot yet do the thing it reports on.
+          # That is the correct exit code and it is asserted rather than tolerated: if one
+          # of them ever exits 0, either the lab genuinely improved or a report started
+          # flattering it, and both are worth a failed build until someone looks.
+          autonomous-lab qc single_cell_genomics || [ $? -eq 1 ]
+          autonomous-lab failures single_cell_genomics || [ $? -eq 1 ]
+          autonomous-lab vision || [ $? -eq 1 ]
+          autonomous-lab throughput single_cell_genomics || [ $? -eq 1 ]
+          autonomous-lab provenance single_cell_genomics || [ $? -eq 1 ]
+          autonomous-lab lineage single_cell_genomics || [ $? -eq 1 ]
+          autonomous-lab loop single_cell_genomics || [ $? -eq 1 ]
 
   lint:
     runs-on: ubuntu-latest
