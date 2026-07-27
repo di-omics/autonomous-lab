@@ -18,9 +18,21 @@ from typing import List
 
 from .doctor import check_federated, render as render_checks
 from .executor import Executor
+from .intelligence import (
+  BENCHMARKS,
+  JUDGMENTS,
+  knowledge_summary,
+  loop_closure,
+  untrusted_ops,
+)
 from .ledger import build_ledger, rank_unlocks
 from .model import Verdict
+from .provenance import provenance_report
+from .qc import MEASUREMENTS, gate_report
+from .recovery import recovery_report, visual_checks_that_would_help
 from .registry import FEDERATED, registry
+from .throughput import estimate as throughput_estimate
+from .vision import VisionCapability, gaps as vision_gaps, summarize as vision_summary
 from .workcell import Workcell
 from . import protocols
 
@@ -146,6 +158,203 @@ def _run(args) -> int:
   return 0 if report.handoff is None else 1
 
 
+def _qc(args) -> int:
+  """Can this protocol's QC gates be evaluated at all?"""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  report = gate_report(p.name, build_ledger(p, wc))
+  print(f"QC gates on {p.name}\n")
+  if not report.rows:
+    print("  no gates declared. Nothing about this protocol's results is checked.")
+    return 1
+  for row in report.rows:
+    print(f"  {row.readiness.value.upper():<14} {row.gate.name}")
+    print(f"      protects   {row.gate.blocks}")
+    print(f"      {row.reason}")
+    for c in row.gate.criteria:
+      mark = "" if c.basis.validated else "   [unvalidated threshold]"
+      print(f"      - {c.describe()}  ({c.basis.value}){mark}")
+    print()
+  wrong = report.inappropriate(MEASUREMENTS)
+  for gate_name, meas in wrong:
+    print(f"  WRONG ASSAY  {gate_name} reads '{meas.key}'")
+    print(f"      {meas.inappropriate_reason}")
+    print()
+  unsat = report.unsatisfiable()
+  print(f"  {len(report.rows) - len(unsat)} of {len(report.rows)} gate(s) can be evaluated today")
+  if unsat:
+    print("  A protocol configured with a gate that cannot fire looks supervised and is not.")
+  return 0 if report.closes_the_loop() and not wrong else 1
+
+
+def _vision(args) -> int:
+  """What a camera would catch here, and what no camera ever will."""
+  cap = VisionCapability.none()
+  counts = vision_summary(cap)
+  print(f"visual checks in this workcell ({cap.name})\n")
+  for gap in vision_gaps(cap):
+    state = "available" if gap.available else ("IMPOSSIBLE" if not gap.check.possible else "blocked")
+    print(f"  {state:<11} {gap.check.name}")
+    print(f"      observes   {gap.check.observes}")
+    print(f"      catches    {gap.check.catches}  ({gap.check.observable.value})")
+    print(f"      {gap.reason}")
+    if gap.check.note:
+      print(f"      note       {gap.check.note}")
+    print()
+  print(
+    f"  {counts['available']} available, {counts['blocked']} blocked, "
+    f"{counts['impossible']} impossible of {counts['total']}"
+  )
+  if cap.note:
+    print(f"  {cap.note}")
+  return 0 if counts["available"] == counts["total"] else 1
+
+
+def _failures(args) -> int:
+  """Which failures would be caught, when, and which are silent."""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  ledger = build_ledger(p, wc)
+  report = recovery_report(p, gate_report(p.name, ledger), VisionCapability.none())
+  print(f"failure modes on {p.name}\n")
+  for row in report.rows:
+    f = row.failure
+    flag = "  <-- silent and destructive" if row.destructive_and_silent else ""
+    print(f"  {row.latency.value.upper():<17} {f.name}  [{f.severity.value}]{flag}")
+    print(f"      {f.description}")
+    print(f"      plan: {f.declared_detection.value} at {f.declared_latency.value}")
+    print(f"      real: {row.detection.value} -- {row.reason}")
+    print()
+  c = report.counts()
+  print(
+    f"  {c['total']} failure mode(s): {c['silent']} silent, "
+    f"{c['destructive_and_silent']} silent AND destructive, {c['degraded']} worse than planned"
+  )
+  print(
+    f"  {c['vision_would_not_help']} of the silent ones are invisible to any camera; "
+    "they need a different sensor or a calibration experiment"
+  )
+  helpful = visual_checks_that_would_help(report)
+  if helpful:
+    print("\n  cameras would convert these from silent to caught:")
+    for name in helpful:
+      print(f"    - {name}")
+  return 0 if not report.destructive_and_silent() else 1
+
+
+def _throughput(args) -> int:
+  """How many plates a day, or why that cannot be said."""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  est = throughput_estimate(p, build_ledger(p, wc))
+  print(f"throughput for {p.name}\n")
+  print(f"  timed steps      {len(est.measured_ops)} of {len(p.steps)}  ({100 * est.measured_fraction:.0f}%)")
+  print(f"  attended steps   {len(est.attended_ops)} of {len(p.steps)} need a human")
+  if est.computable:
+    print(f"  one plate        {est.floor_seconds:.0f} s")
+    print(f"  bottleneck       {est.bottleneck} at {est.bottleneck_seconds:.0f} s per plate")
+    span = est.makespan(10)
+    if span is not None:
+      print(f"  10 plates        {span:.0f} s")
+    rate = est.plates_per_day()
+    if rate is not None:
+      print(f"  plates/day       {rate:.1f}  (bounded by attended hours)")
+  else:
+    print(f"  measured floor   {est.floor_seconds:.0f} s (a lower bound, not a total)")
+    print("\n  NOT COMPUTABLE")
+    print(f"  {est.why_not()}")
+    print(
+      "\n  A plates-per-day figure over untimed steps would be a guess formatted as a\n"
+      "  specification. The floor is real; the total is not available."
+    )
+  return 0 if est.computable else 1
+
+
+def _provenance(args) -> int:
+  """What could actually be proven about a run afterwards."""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  report = provenance_report(build_ledger(p, wc))
+  c = report.counts()
+  print(f"provenance for {p.name}\n")
+  print(f"  steps an instrument could confirm   {c['steps_confirmable']} of {c['steps_total']}")
+  print(f"  steps recorded on intent alone      {c['steps_asserted_only']}")
+  print(f"  unobserved custody transfers        {c['custody_gaps']}\n")
+  for gap in report.gaps:
+    print(f"  GAP  {gap.artifact}: {gap.from_instrument} -> {gap.to_instrument}")
+    print(f"       {gap.reason}")
+    print(f"       closes it: {gap.closes_it}")
+    print()
+  if report.gaps:
+    print(
+      "  The chain of custody breaks at exactly the physical hops the ledger counts.\n"
+      "  Software cannot close these; a barcode read or a reporting arm can."
+    )
+  return 0 if report.unbroken else 1
+
+
+def _knowledge(args) -> int:
+  """The tacit layer: expert judgments and the benchmarks a robot must meet."""
+  s = knowledge_summary()
+  print("encoded expert judgment\n")
+  for j in JUDGMENTS:
+    mark = "" if j.validated else "   [unvalidated]"
+    print(f"  {j.name}  ({j.basis.value}){mark}")
+    print(f"      when  {j.when}")
+    print(f"      then  {j.then}")
+    print(f"      why   {j.because}")
+    if j.guards:
+      print(f"      guards against  {j.guards}")
+    print()
+  print("robot benchmarks\n")
+  for b in BENCHMARKS:
+    print(f"  {b.status.value.upper():<12} {b.name}  ({b.op})")
+    print(f"      target   {b.target}")
+    if b.evidence:
+      print(f"      evidence {b.evidence}")
+    if b.how_to_measure and not b.status.trusted:
+      print(f"      measure  {b.how_to_measure}")
+    print()
+  print(
+    f"  {s['judgments_validated']} of {s['judgments']} judgments validated against this "
+    f"lab's own data"
+  )
+  print(
+    f"  {s['benchmarks_met']} of {s['benchmarks']} benchmarks met "
+    f"({s['benchmarks_unmeasured']} unmeasured, {s['benchmarks_failed']} failed)"
+  )
+  return 0
+
+
+def _loop(args) -> int:
+  """The capstone: can this lab close one hypothesis-to-evidence loop?"""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  ledger = build_ledger(p, wc)
+  gates = gate_report(p.name, ledger)
+  recovery = recovery_report(p, gates, VisionCapability.none())
+  prov = provenance_report(ledger)
+  closure = loop_closure(ledger, gates, recovery, prov)
+
+  print(f"loop closure for {p.name}\n")
+  for leg in closure.legs:
+    print(f"  {leg.leg.value.upper():<9} {'ok' if leg.ok else 'BROKEN'}")
+    print(f"      {leg.reason}")
+  print()
+  if closure.closes:
+    print("  This lab can close a hypothesis-to-evidence loop on this protocol.")
+    return 0
+  print(f"  {len(closure.broken())} of 4 legs broken. The loop does not close.")
+  print(
+    "\n  Each leg implies different work: EXECUTE means reverse-engineering, MEASURE means\n"
+    "  an instrument that returns a usable number, DECIDE means a detection path for the\n"
+    "  failures that destroy material, RECORD means barcodes or an arm that reports."
+  )
+  untrusted = untrusted_ops(p)
+  print(f"\n  Separately, {len(untrusted)} of {len({s.op for s in p.steps})} operations have no met benchmark.")
+  return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
   p = argparse.ArgumentParser(prog="autonomous-lab", description=__doc__)
   sub = p.add_subparsers(dest="cmd", required=True)
@@ -191,6 +400,39 @@ def build_parser() -> argparse.ArgumentParser:
   )
   common(rn)
   rn.set_defaults(func=_run)
+
+  qc = sub.add_parser("qc", help="can this protocol's QC gates be evaluated at all?")
+  qc.add_argument("protocol")
+  common(qc)
+  qc.set_defaults(func=_qc)
+
+  vs = sub.add_parser("vision", help="what a camera would catch, and what no camera ever will")
+  common(vs)
+  vs.set_defaults(func=_vision)
+
+  fl = sub.add_parser("failures", help="which failures are caught, when, and which are silent")
+  fl.add_argument("protocol")
+  common(fl)
+  fl.set_defaults(func=_failures)
+
+  tp = sub.add_parser("throughput", help="plates per day, or why that number does not exist")
+  tp.add_argument("protocol")
+  common(tp)
+  tp.set_defaults(func=_throughput)
+
+  pv = sub.add_parser("provenance", help="what could be proven about a run afterwards")
+  pv.add_argument("protocol")
+  common(pv)
+  pv.set_defaults(func=_provenance)
+
+  kn = sub.add_parser("knowledge", help="encoded expert judgment and robot benchmarks")
+  common(kn)
+  kn.set_defaults(func=_knowledge)
+
+  lp = sub.add_parser("loop", help="can this lab close one hypothesis-to-evidence loop?")
+  lp.add_argument("protocol")
+  common(lp)
+  lp.set_defaults(func=_loop)
 
   return p
 
