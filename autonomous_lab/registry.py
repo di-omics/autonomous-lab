@@ -275,7 +275,7 @@ FEDERATED: Dict[str, FederatedSpec] = {
     validated_ops={
       "pcr_enrichment_round1": ValidatedRun(
         script="instrument-integrations/odtc/05_odtc_run_protocol.py",
-        confirm_token=None,
+        confirm_token="i-am-watching",
         evidence=(
           "supervised PCR enrichment cycling completed on the instrument; the high-temperature "
           "setpoint approached the block ceiling, and the choreography does not close the door "
@@ -301,7 +301,7 @@ FEDERATED: Dict[str, FederatedSpec] = {
     validated_ops={
       "bringup": ValidatedRun(
         script="instrument-integrations/tecan-infinite/02_tecan_bringup.py",
-        confirm_token=None,
+        confirm_token="i-am-watching",
         evidence=(
           "setup() and INIT FORCE completed, stage homed, driver ready, on starpi2 "
           "2026-07-16; note this unit rejects ABS #BEAM DIAMETER with ERR1, so the "
@@ -311,7 +311,7 @@ FEDERATED: Dict[str, FederatedSpec] = {
       ),
       "tray_cycle": ValidatedRun(
         script="instrument-integrations/tecan-infinite/03_tecan_tray.py",
-        confirm_token=None,
+        confirm_token="i-am-watching",
         evidence=(
           "five clean cycles on starpi2 2026-07-16; close stable at 3.6 s, open bimodal "
           "3.2 s vs 5.3 s and tracking the stage's start position rather than the plate, "
@@ -322,7 +322,7 @@ FEDERATED: Dict[str, FederatedSpec] = {
     known_failures={
       "read_absorbance": ValidatedRun(
         script="instrument-integrations/tecan-infinite/04_tecan_read_absorbance.py",
-        confirm_token=None,
+        confirm_token="i-am-watching",
         evidence=(
           "FAILED on the instrument from starpi2 2026-07-16: TimeoutError reading USB, "
           "raised in driver.py run_scan on 'ABSOLUTE MTP,Y=<y_stage>', deterministic 2 of "

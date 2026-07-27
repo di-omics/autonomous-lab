@@ -35,6 +35,7 @@ autonomous-lab failures single_cell_genomics  # what goes wrong, and would anyth
 autonomous-lab vision                         # what a camera catches; what none ever will
 autonomous-lab throughput single_cell_genomics  # plates/day, or why that number does not exist
 autonomous-lab provenance single_cell_genomics  # what could be proven about a run afterwards
+autonomous-lab lineage single_cell_genomics   # which cell did this read come from?
 autonomous-lab knowledge                      # encoded expert judgment and robot benchmarks
 ```
 
@@ -224,6 +225,70 @@ between the plate now on the deck and the record describing it rests on the huma
 carried the right one. Software cannot close that by being careful. A barcode read at both
 ends can, or an arm that reports the move.
 
+### Sample identity: which cell the read came from
+
+Everything above tracks **containers**. The ledger costs a plate hop, provenance records
+that `library_plate` moved from the STAR to the reader, and both are right. But no
+experiment's conclusion is about a plate. The claim a single-cell run exists to make is
+*this variant was in this cell*, and that runs through a different graph.
+
+```
+$ autonomous-lab lineage single_cell_genomics
+
+  TODAY     CLAIMED
+      4 step(s) in the chain do not happen in this lab at all, starting at
+      'load_protocol', so there is no material to attribute yet
+  CEILING   CLAIMED   (every command decoded)
+      the material crosses 5 unobserved custody hop(s) ... barcodes read at both
+      ends close this, decoding does not
+
+  LINCHPIN  pcr_enrichment_round1_cleanup on star, attested: witnessed
+  BLIND MEASUREMENT  read_absorbance on tecan -- reads 96 cell(s) as one number
+```
+
+The two graphs come apart at pooling. Material is `ADDRESSED` when each unit sits in its
+own well, `TAGGED` when units share a vessel but carry indices, and `BULK` or `MERGED`
+when neither holds. `BULK` and `MERGED` look identical in a tube and are opposite facts:
+bulk means identity never existed -- cells in a suspension were never individually known,
+and **the sort is what creates their identity** -- while merged means it existed and was
+thrown away. Pool 96 wells with no index first and no barcode reader, no camera, and no
+amount of decoding gets it back. That is the one failure in this repo that is permanent at
+the moment it happens.
+
+Three results here are worth more than the verdict.
+
+**The linchpin is a manual step.** Indexing is the only operation whose effect survives
+pooling, so every per-cell claim the run makes rests on it. In this lab it is
+`pcr_enrichment_round1_cleanup`, which has no validated run card, so a person pipettes 96
+different indices into 96 wells and nothing reads back that they landed correctly. The
+sequencing still runs either way, and still returns data.
+
+**The only quantification is blind to the failure it should catch.** `read_absorbance`
+measures after pooling, so it reads 96 cells as one number. `bead_pellet_aspirated`
+destroys a single well; that moves the pooled value by about a ninety-sixth and fails no
+gate. The recovery layer already calls that failure silent. This says *why* -- and it is
+computed from the same protocol, not asserted alongside it. A tag makes attribution
+recoverable only to an instrument that can **read** the tag: the sequencer demultiplexes,
+the plate reader looking at the same tube cannot, and only the sequencer is exempted.
+
+**Finishing every decode does not fix it.** `ceiling` grants the entire reverse-engineering
+queue and asks what attribution would then be possible. It stops at CLAIMED, because what
+caps it is five plate hops a human carries unobserved. **The EXECUTE budget cannot buy the
+RECORD leg.** That is the same conclusion the custody analysis reaches, arrived at from the
+sample side rather than the container side, and it is computed from the ledger's own
+hop count rather than a second list.
+
+Two things it refuses. A protocol whose material-moving steps do not declare what they do
+to identity is **refused rather than defaulted**, because defaulting to a passthrough would
+report an intact chain straight through the operation that destroys it. And a correctly
+tagged pool still carries an unmeasured error term: index misassignment is recorded with
+basis `literature`, not `in_house`, because this lab has never bounded its own rate.
+
+The chemistry protocol is the contrast. A compound plate arrives already individuated and
+never pools, so it stays `ADDRESSED` throughout and its only identity problem is custody.
+The genomics protocol's exposure comes from its chemistry, not from its instruments being
+worse.
+
 ### The tacit layer
 
 ```
@@ -290,9 +355,34 @@ real bug during development: every STAR step was citing `RUN_PCR_ENRICHMENT_ODTC
 when the whole-genome sequencing preparation run card actually gates on `RUN_SINGLE_COL_WGS_PREP_HHS`. The ledger was
 telling an operator to type a token that would have refused the run.
 
-What it deliberately **cannot** check is `evidence` -- whether an operator really watched
-the thing run. That is prose about the physical world and no checker reaches it, which is
-why the evidence strings stay narrow and carry their own caveats.
+Existence is not status, though. A run card that is still on disk proves nothing about
+whether anyone watched it run, so those checks cannot catch the more interesting
+disagreement: plr-tested downgrading an operation to `written` while this package still
+calls it validated.
+
+plr-tested now publishes [`evidence/manifest.json`](https://github.com/di-omics/plr-tested/tree/main/evidence),
+its own machine-readable record of what has met an instrument, verified by its own CI under
+its own rules. So `doctor` cross-checks against it, operation by operation:
+
+```
+  [ok  ] star.wgs_prep_lysis          status agrees with plr-tested: validated
+  [ok  ] star.wgs_prep_lysis          cites the same run card as plr-tested
+  [ok  ] star.wgs_prep_lysis          confirm token agrees with plr-tested: RUN_SINGLE_COL_WGS_PREP_HHS
+  [ok  ] (coverage)                   6 validated operation(s) in plr-tested are not modelled here
+```
+
+Where they disagree, the repo with the instrument wins, because it is the one with the
+operator. **Before this, `validated_ops` was an assertion about someone else's repo that
+only its own author could refute. Now it is a claim the source of truth can contradict, in
+CI, without anyone remembering to look.** A checkout with no manifest is reported as a
+failure rather than skipped -- the absence of a check is not a pass.
+
+Writing the manifest immediately caught one: the ODTC and Tecan run cards gate on
+`--confirm i-am-watching`, and this package had recorded them as having no gate at all.
+
+What neither checker can reach is `evidence` -- whether an operator really watched the
+thing run. That is prose about the physical world, which is why the evidence strings stay
+narrow and carry their own caveats.
 
 ## Three things it refuses to do
 
@@ -360,7 +450,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-128 device-free tests. The ones that matter most try to make the layer lie:
+145 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever
@@ -374,6 +464,8 @@ pip install -e '.[dev]' && pytest
 - return a plates-per-day figure over durations nobody measured.
 - verify a run record after an event has been edited, removed, or reordered.
 - treat an unbenchmarked operation as trusted.
+- report an intact sample chain through a pooling step that destroyed attribution, or
+  claim a pooled absorbance reading says something about one well.
 
 Two tests exist to keep the honesty from drifting quietly. One asserts that even a fully
 equipped workcell -- every camera, every calibration, every model -- still leaves

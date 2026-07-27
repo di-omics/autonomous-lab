@@ -16,7 +16,7 @@ import logging
 import sys
 from typing import List
 
-from .doctor import check_federated, render as render_checks
+from .doctor import check_federated, check_manifest, render as render_checks
 from .executor import Executor
 from .intelligence import (
   BENCHMARKS,
@@ -26,6 +26,7 @@ from .intelligence import (
   untrusted_ops,
 )
 from .ledger import build_ledger, rank_unlocks
+from .lineage import MISASSIGNMENT, Separability, lineage_report
 from .model import Verdict
 from .provenance import provenance_report
 from .qc import MEASUREMENTS, gate_report
@@ -137,7 +138,13 @@ def _gaps(args) -> int:
 
 
 def _doctor(args) -> int:
-  """Check the federated claims against a real plr-tested checkout."""
+  """Check the federated claims against a real plr-tested checkout.
+
+  Two passes with different powers. The first checks that cited files and tokens exist,
+  which catches a rename. The second compares this package's status claims against
+  plr-tested's own published manifest, which catches the disagreement existence cannot:
+  an operation this package still calls validated that its source repo has downgraded.
+  """
   wc = _workcell(args)
   root = wc.plr_tested_root
   if not root:
@@ -146,7 +153,7 @@ def _doctor(args) -> int:
       file=sys.stderr,
     )
     return 2
-  checks = check_federated(root)
+  checks = check_federated(root) + check_manifest(root)
   print(render_checks(checks))
   return 0 if all(c.ok for c in checks) else 1
 
@@ -293,6 +300,72 @@ def _provenance(args) -> int:
   return 0 if report.unbroken else 1
 
 
+def _lineage(args) -> int:
+  """Can this lab say which cell a result came from?"""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  report = lineage_report(p, build_ledger(p, wc), args.datum, unit=args.unit)
+  g = report.graph
+  c = report.counts()
+
+  print(f"sample lineage for {p.name}: '{args.datum}' back to one {report.unit}\n")
+  print(f"  {report.unit}s in the run                  {c['units']}")
+  print(f"  steps in the identity chain         {c['steps_in_chain']}")
+  print(f"  steps that happen at all today      {c['steps_that_happen_today']}")
+  print(f"  steps on a human's word             {c['steps_on_a_human_s_word']}")
+  print(f"  unobserved custody hops             {c['unobserved_custody_hops']}\n")
+
+  print(f"  TODAY     {report.verdict.value.upper()}")
+  print(f"      {report.reason}")
+  print(f"  CEILING   {report.ceiling.value.upper()}   (every command decoded)")
+  print(f"      {report.ceiling_reason}\n")
+
+  print("  where the material stands:")
+  # The sample stream only. A flow cell is real, is not a cell, and would read as one.
+  for name, cohort in ((n, g.cohorts[n]) for n in g.ancestry(args.datum) if n in g.cohorts):
+    flag = "  <-- COLLISION" if cohort.tag_collision else ""
+    print(
+      f"    {name:18} {cohort.members:>4} {report.unit}(s)  {cohort.separability.value}{flag}"
+    )
+
+  tag = g.tag_edge()
+  if tag is not None:
+    att = tag.attestation.value if tag.attestation else "nobody"
+    print(f"\n  LINCHPIN  {tag.step_op} on {tag.instrument}, attested: {att}")
+    print(
+      "      This is the only step whose effect survives pooling. Every per-"
+      f"{report.unit}\n      claim the run makes rests on it, and no instrument reads back"
+      " that it\n      happened correctly."
+    )
+
+  destroyed = g.destroyed_at()
+  if destroyed is not None:
+    print(f"\n  DESTROYED AT  {destroyed.step_op}")
+    print("      Material was pooled with no label applied first. This is not recoverable")
+    print("      by any instrument, now or later.")
+
+  blind = g.post_merge_measurements()
+  for e in blind:
+    print(f"\n  BLIND MEASUREMENT  {e.step_op} on {e.instrument}")
+    print(
+      f"      reads {e.before.members} {report.unit}(s) as one number. A failure confined"
+      f" to one\n      of them moves it by about 1/{e.before.members} and fails no gate."
+    )
+
+  if any(c.separability is Separability.TAGGED for c in g.cohorts.values()):
+    print("\n  UNMEASURED ERROR TERM  index misassignment")
+    print(f"      {MISASSIGNMENT.mechanism}")
+    print(f"      basis: {MISASSIGNMENT.basis.value}; measured in this lab: no")
+    print(f"      mitigated by: {MISASSIGNMENT.mitigated_by}")
+
+  print(
+    "\n  Tracking a plate and tracking a sample are different problems. This lab's"
+    f"\n  container record can be perfect and still not say which {report.unit} a result"
+    " came from."
+  )
+  return 0 if report.verdict.ok else 1
+
+
 def _knowledge(args) -> int:
   """The tacit layer: expert judgments and the benchmarks a robot must meet."""
   s = knowledge_summary()
@@ -424,6 +497,13 @@ def build_parser() -> argparse.ArgumentParser:
   pv.add_argument("protocol")
   common(pv)
   pv.set_defaults(func=_provenance)
+
+  ln = sub.add_parser("lineage", help="which sample a result came from, and whether that is provable")
+  common(ln)
+  ln.add_argument("protocol", nargs="?", default="single_cell_genomics")
+  ln.add_argument("--datum", default="run_outcome", help="the result to trace back")
+  ln.add_argument("--unit", default="cell", help="what the science needs to distinguish")
+  ln.set_defaults(func=_lineage)
 
   kn = sub.add_parser("knowledge", help="encoded expert judgment and robot benchmarks")
   common(kn)

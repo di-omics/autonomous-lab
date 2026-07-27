@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from .model import Artifact, Protocol, Step, ZeroDecodeOp
+from .model import Artifact, Protocol, Step, Transform, ZeroDecodeOp
 
 # Artifacts. `physical` marks material that must be physically carried when its producer
 # and consumer sit on different instruments; the ledger counts those hops separately.
@@ -65,12 +65,14 @@ SINGLE_CELL_GENOMICS = Protocol(
       summary="seat the disposable cartridge and load the cell suspension",
       produces=("cell_suspension",),
       manual_reason="seating a cartridge and loading a suspension is a bench action; no code path covers it",
+      transform=Transform.ENTER,
     ),
     Step(
       instrument="namocell",
       op="load_protocol",
       summary="select the sort mode and the gate on scatter/fluorescence",
       consumes=("cell_suspension",),
+      transform=Transform.MOVE,
     ),
     Step(instrument="namocell", op="prime", summary="bring fluidics to sort pressure, verify stable"),
     Step(
@@ -84,6 +86,11 @@ SINGLE_CELL_GENOMICS = Protocol(
       op="start_sort",
       summary="dispense single cells into the staged plate",
       produces=("sorted_plate",),
+      # The sort is where per-cell identity is created. Upstream of it the suspension is
+      # bulk and no cell is individually knowable; downstream each one has an address.
+      transform=Transform.SPLIT,
+      fanout=96,
+      lineage_input="cell_suspension",
     ),
     Step(instrument="namocell", op="wait_complete", summary="poll until the plate is fully sorted"),
     Step(
@@ -92,6 +99,7 @@ SINGLE_CELL_GENOMICS = Protocol(
       summary="lyse and add whole-genome sequencing preparation reaction mix (validated dry on hardware)",
       consumes=("sorted_plate",),
       produces=("lysate_plate",),
+      transform=Transform.MOVE,
     ),
     Step(
       instrument="odtc",
@@ -99,6 +107,7 @@ SINGLE_CELL_GENOMICS = Protocol(
       summary="operator-defined amplification program with supervised hardware evidence",
       consumes=("lysate_plate",),
       produces=("amplified_plate",),
+      transform=Transform.MOVE,
     ),
     Step(
       instrument="star",
@@ -106,6 +115,12 @@ SINGLE_CELL_GENOMICS = Protocol(
       summary="magnetic bead cleanup and index addition",
       consumes=("amplified_plate",),
       produces=("pcr1_plate",),
+      # The load-bearing step for the entire scientific claim. This is the only place a
+      # label gets attached, and everything after it pools. If this does not happen, or
+      # happens wrong, no downstream analysis can tell one cell from another -- and the
+      # sequencing still runs, and still returns data.
+      transform=Transform.TAG,
+      fanout=96,
     ),
     Step(
       instrument="star",
@@ -113,6 +128,7 @@ SINGLE_CELL_GENOMICS = Protocol(
       summary="normalize and pool the indexed library",
       consumes=("pcr1_plate",),
       produces=("library_plate",),
+      transform=Transform.MERGE,
     ),
     # You do not pool and sequence a library you have not quantified. This step is here
     # because a protocol that skipped it would produce a better autonomy number and be
@@ -124,6 +140,7 @@ SINGLE_CELL_GENOMICS = Protocol(
       summary="quantify the pooled library before committing a flow cell",
       consumes=("library_plate",),
       produces=("library_quant",),
+      transform=Transform.MEASURE,
     ),
     Step(
       instrument="element_aviti",
@@ -136,12 +153,14 @@ SINGLE_CELL_GENOMICS = Protocol(
       summary="load the flow cell, reagents, and buffer",
       produces=("flow_cell",),
       manual_reason="loading a flow cell and reagents is a bench action; no code path covers it",
+      transform=Transform.ENTER,
     ),
     Step(
       instrument="element_aviti",
       op="upload_manifest",
       summary="stage the RunManifest.csv for the pooled library",
       consumes=("library_plate", "flow_cell", "library_quant"),
+      transform=Transform.MOVE,
     ),
     Step(
       instrument="element_aviti",
@@ -154,6 +173,12 @@ SINGLE_CELL_GENOMICS = Protocol(
       op="start_run",
       summary="commit the flow cell and begin sequencing",
       produces=("run_folder",),
+      # Sequencing is the measurement: material becomes data here. The library was
+      # already committed at upload_manifest, so this names its input for lineage only
+      # and adds no plate hop.
+      transform=Transform.MEASURE,
+      reads_tags=True,  # the sequencer demultiplexes; this is the one read that is per-cell
+      lineage_input="library_plate",
     ),
     Step(
       instrument="element_aviti",
@@ -161,6 +186,7 @@ SINGLE_CELL_GENOMICS = Protocol(
       summary="read run state and outcome off the output folder until complete",
       consumes=("run_folder",),
       produces=("run_outcome",),
+      transform=Transform.MOVE,
       params={"run_dir": "/mnt/aviti-output/<run>"},
     ),
   ),
@@ -191,6 +217,10 @@ SMALL_MOLECULE_QC = Protocol(
       summary="load the tip box and the source plate on the deck",
       produces=("source_plate",),
       manual_reason="the VIAFLO 96 has no deck automation; labware is placed by hand",
+      # A compound plate arrives already individuated, unlike a cell suspension. It needs
+      # no split to acquire identity, which is why this protocol never risks losing it.
+      transform=Transform.ENTER,
+      fanout=96,
     ),
     Step(
       instrument="viaflo96",
@@ -198,6 +228,7 @@ SMALL_MOLECULE_QC = Protocol(
       summary="transfer the serialized serial-dilution program into device memory",
       consumes=("source_plate",),
       params={"program": "serial_dilution"},
+      transform=Transform.MOVE,
     ),
     Step(instrument="viaflo96", op="select_program", summary="set the active program"),
     Step(
@@ -205,6 +236,8 @@ SMALL_MOLECULE_QC = Protocol(
       op="run_program",
       summary="execute the dilution series standalone",
       produces=("diluted_plate",),
+      transform=Transform.MOVE,
+      lineage_input="source_plate",
     ),
     Step(
       instrument="biotage_v10",
@@ -212,6 +245,7 @@ SMALL_MOLECULE_QC = Protocol(
       summary="transfer aliquots into V-10 vials and load the rack",
       consumes=("diluted_plate",),
       manual_reason="no plate-to-vial transfer instrument is in this workcell",
+      transform=Transform.MOVE,
     ),
     Step(
       instrument="biotage_v10",
@@ -224,6 +258,10 @@ SMALL_MOLECULE_QC = Protocol(
       op="start_method",
       summary="run the evaporation method",
       produces=("dried_sample",),
+      # Already standing on its material: the vials are in the rack. Named for lineage
+      # rather than added to `consumes`, so no second plate hop is invented.
+      transform=Transform.MOVE,
+      lineage_input="diluted_plate",
     ),
     Step(instrument="biotage_v10", op="get_status", summary="poll until the method completes"),
     Step(
@@ -237,6 +275,7 @@ SMALL_MOLECULE_QC = Protocol(
       summary="reconstitute and place vials in the autosampler",
       consumes=("dried_sample",),
       manual_reason="no vial-handling instrument is in this workcell",
+      transform=Transform.MOVE,
     ),
     Step(
       instrument="agilent6530",
@@ -249,6 +288,8 @@ SMALL_MOLECULE_QC = Protocol(
       op="start_run",
       summary="begin the LC/MS acquisition",
       produces=("chromatogram",),
+      transform=Transform.MEASURE,
+      lineage_input="dried_sample",
     ),
   ),
 )

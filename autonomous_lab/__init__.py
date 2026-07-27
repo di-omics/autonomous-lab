@@ -32,6 +32,8 @@ five further layers ask whether the rest hold:
   recovery      what goes wrong, whether anything here would notice, and how late.
   throughput    plates per day -- or an honest refusal, when nothing has been timed.
   provenance    a tamper-evident run record, and where the custody chain breaks.
+  lineage       which cell a read came from -- and whether pooling already destroyed the
+                answer, which is a different question from whether the plate was tracked.
   intelligence  the tacit expert judgment and the benchmarks a robot must meet first.
 """
 
@@ -47,7 +49,21 @@ from .intelligence import (
   trusted_for,
 )
 from .ledger import Ledger, StepVerdict, Unlock, build_ledger, cost_step, rank_unlocks
-from .model import Artifact, Protocol, Role, Step, Tier, Verdict, ZeroDecodeOp
+from .lineage import (
+  MISASSIGNMENT,
+  Cohort,
+  LineageEdge,
+  LineageGraph,
+  LineageReport,
+  Misassignment,
+  Separability,
+  Traceability,
+  UndeclaredTransform,
+  build_lineage,
+  lineage_report,
+  undeclared_transforms,
+)
+from .model import Artifact, Protocol, Role, Step, Tier, Transform, Verdict, ZeroDecodeOp
 from .provenance import Attestation, CustodyGap, Event, RunRecord, provenance_report
 from .qc import Basis, Criterion, Decision, Gate, Readiness, evaluate, gate_report
 from .recovery import Detection, FailureMode, Latency, Severity, recovery_report
@@ -76,6 +92,8 @@ def loop_closure_for(protocol, workcell=None):
 
 __all__ = [
   "Artifact",
+  "Cohort",
+  "MISASSIGNMENT",
   "Attestation",
   "Basis",
   "Benchmark",
@@ -98,12 +116,17 @@ __all__ = [
   "Latency",
   "Ledger",
   "Leg",
+  "LineageEdge",
+  "LineageGraph",
+  "LineageReport",
+  "Misassignment",
   "LoopClosure",
   "Observable",
   "Protocol",
   "Readiness",
   "Role",
   "RunRecord",
+  "Separability",
   "RunReport",
   "Severity",
   "Step",
@@ -111,6 +134,9 @@ __all__ = [
   "StepVerdict",
   "Tier",
   "TimeBasis",
+  "Traceability",
+  "Transform",
+  "UndeclaredTransform",
   "Unlock",
   "Verdict",
   "VisionCapability",
@@ -119,12 +145,14 @@ __all__ = [
   "Workcell",
   "ZeroDecodeOp",
   "build_ledger",
+  "build_lineage",
   "cost_step",
   "declared",
   "estimate",
   "evaluate",
   "gate_report",
   "knowledge_summary",
+  "lineage_report",
   "loop_closure",
   "loop_closure_for",
   "provenance_report",
@@ -133,4 +161,5 @@ __all__ = [
   "registry",
   "spec",
   "trusted_for",
+  "undeclared_transforms",
 ]
