@@ -10,10 +10,11 @@
 1. How much of this protocol can the workcell execute today, and what exactly blocks the rest?
 2. Given assay QC, vision, telemetry, and sample history, is the proposed next action permitted?
 
-It combines an evidence-derived automation ledger, deterministic expert gates, sample
-provenance, recovery decisions, and throughput arithmetic. Unsupported actions stop at
-the boundary. Synthetic demonstrations say they are synthetic. Hardware claims are
-checked against the code and run cards that support them.
+It combines an evidence-derived automation ledger, deterministic expert gates, atomic
+workcell resource leases, sample provenance, recovery decisions, and throughput
+arithmetic. Unsupported actions stop at the boundary. Synthetic demonstrations say they
+are synthetic. Hardware claims are checked against the code and run cards that support
+them.
 
 Public developer prototype for [Clair](https://clair.bio), built by
 [Di Hu](https://reinhaudt.com).
@@ -25,7 +26,7 @@ flowchart LR
   A["Scientist, model, or robot proposes an action"] --> D{"Deterministic evidence gates"}
   B["Assay QC, including plate-reader measurements"] --> D
   C["Vision, telemetry, and sample state"] --> D
-  D -->|pass| E["Permission at the execution boundary"]
+  D -->|pass| E["Atomic resource lease and permission at the execution boundary"]
   D -->|fail| F["Retry, recover, escalate, or stop"]
   E --> G["Hash-chained run and provenance ledger"]
   F --> G
@@ -36,6 +37,9 @@ Models propose. Versioned, assay-specific rules decide. The execution layer stil
 prove that the instrument command exists, is decoded, has a usable transport, and is
 allowed to actuate. Every observation and decision can be committed to an append-only
 record for replay.
+
+See [Making an existing laboratory AI-native](docs/AI_NATIVE_WORKCELL.md) for the
+cross-repository architecture and the role of the overarching domain expert.
 
 ## Run it in 30 seconds
 
@@ -50,6 +54,12 @@ autonomous-lab loop --scenario vision_error
 
 # Missing instrument telemetry stops rather than guessing physical state.
 autonomous-lab loop --scenario missing_evidence
+
+# Lease a camera, plate mover, and sequencer; recover pose; preserve sample state.
+autonomous-lab orchestrate --scenario vision_recovery
+
+# A competing task owns the mover, so no evidence adapter or operation is called.
+autonomous-lab orchestrate --scenario resource_busy
 
 # Find the bottleneck in an explicitly illustrative capacity model.
 autonomous-lab throughput --samples 96
@@ -78,12 +88,13 @@ sample location: sequencer_staging
 audit chain: VALID - 7 events form a valid chain
 ```
 
-## Five capability pillars
+## Six capability pillars
 
 | Capability | What the code does now | Evidence boundary |
 | --- | --- | --- |
 | Feedback control and QC | Applies numeric or categorical acceptance gates to plate-reader, assay, or instrument observations; returns continue, retry, recover, escalate, or stop | Demo observations and ranges are synthetic until replaced by a lab-approved policy and live integration |
 | Computer vision and error handling | Gates labware pose, seal presence, liquid presence, or other visible state; encodes the exact recovery when a benchmark fails | Vision cannot stand in for non-visible concentration, interlock, or instrument state |
+| Workcell orchestration | Atomically leases every camera, robot, instrument, or station a task needs; checks sample location; bounds retry and recovery; releases resources on every terminal path | Device adapters are injected and keep their own arming boundary; bundled operations are synthetic |
 | Throughput | Computes per-stage capacity, setup and handoff overhead, parallel-resource effects, the bottleneck, and a conservative serial upper bound | Every duration is labeled measured or assumed; the bundled example is assumed |
 | Sample tracking and provenance | Records registration, derivation, movement, consumption, and lineage in the same hash-chained run record as observations and decisions | Duplicate IDs, impossible derivations, and post-consumption moves are refused |
 | Laboratory intelligence | Turns tacit expert judgment into versioned `ExpertPolicy` gates with required evidence sources, rationale, failure action, and recovery | A model cannot waive a gate or promote missing evidence into permission |
@@ -153,8 +164,26 @@ every stage. One assumed stage makes the whole report an assumption rather than 
 performance.
 
 This is intentionally a transparent capacity model, not a production scheduler. The
-serial upper bound is conservative until resource locking and safe stage overlap are
-proved.
+serial upper bound is conservative until safe stage overlap and measured resource timing
+are proved.
+
+### 5. Policy-gated workcell orchestration
+
+`autonomous_lab.orchestrator` turns a proposal into one bounded workcell task:
+
+1. verify the sample is available at the location recorded in provenance
+2. atomically lease every required resource, or acquire none
+3. gather assay, vision, and telemetry evidence
+4. evaluate the versioned expert policy
+5. call an injected typed operation only after permission
+6. retry or recover within explicit budgets, then escalate rather than loop forever
+7. move the sample in provenance only after the operation succeeds
+8. release every resource on success, stop, escalation, or adapter failure
+
+The one-driver-per-instrument rule is enforced by the same resource manager used for
+cameras, movers, robot arms, and stations. Expected adapter failures are typed as
+`retryable`, `recoverable`, or `failed`; untyped results and unexpected exceptions fail
+closed and enter the audit chain.
 
 ## Instrument control: what is real
 
@@ -190,6 +219,7 @@ OD matrix. That is `broken`, not `manual` and not `automated`.
 | `autonomous-lab run NAME` | Dry-run scheduling and stop at the first handoff |
 | `autonomous-lab run NAME --armed` | Perform only real read-only operations; never actuates |
 | `autonomous-lab loop --scenario NAME` | Exercise QC, vision, telemetry, recovery, and audit behavior on synthetic evidence |
+| `autonomous-lab orchestrate --scenario NAME` | Exercise atomic workcell locks, bounded retry/recovery, typed driver outcomes, and sample movement |
 | `autonomous-lab throughput --samples N` | Report capacity and bottleneck from explicit assumptions |
 
 Reference protocols:
@@ -209,6 +239,12 @@ QC, or flow-cell loading would produce a better autonomy score and a worse lab p
 - Actuation stays in `plr-reverse-engineer`, behind its own `armed` and
   `allow_actuation` switches, with a human present.
 - The executor never skips a blocked step to run a later automatable one.
+- A workcell task acquires its entire resource set atomically; a conflict calls neither
+  its evidence provider nor its operation adapter.
+- Sample provenance is checked before resource acquisition and advances only after a
+  typed successful outcome.
+- Retry and recovery budgets are finite. Exhaustion escalates and leaves the sample at
+  its last proven location.
 - A decoded command still remains blocked when sibling coverage, endpoint, or transport
   preconditions are incomplete.
 - One driver process per instrument is a hard workcell constraint. Competing STAR or
@@ -222,10 +258,11 @@ pip install -e '.[dev]'
 pytest -q
 ```
 
-The suite currently contains **77 device-free tests**. The critical tests try to make the
+The suite currently contains **99 device-free tests**. The critical tests try to make the
 system lie: assert automation for an undecoded command, use vision in place of assay QC,
 continue with missing evidence, tamper with a run record, reuse a sample ID, derive from
-samples in different locations, hide transfer overhead, or skip ahead after a stop.
+samples in different locations, double-book a robot, exhaust recovery, hide transfer
+overhead, or skip ahead after a stop.
 
 CI runs on Python 3.9 and 3.12, lints with Ruff, and enforces ASCII-only tracked text.
 
@@ -237,7 +274,7 @@ CI runs on Python 3.9 and 3.12, lints with Ruff, and enforces ASCII-only tracked
    explicit false-accept limits.
 3. Persist and sign run ledgers outside process memory; connect sample IDs to the lab's
    existing source of truth.
-4. Add resource locking and measured stage timing, then replace the illustrative capacity
-   plan with a validated workcell schedule.
+4. Replace illustrative timing with measured stage and handoff data, then validate safe
+   overlap across multiple resource-leased tasks.
 5. Reproduce one bounded workflow on independently controlled hardware and turn the
    integration into a paid external pilot.

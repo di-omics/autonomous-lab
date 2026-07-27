@@ -21,6 +21,7 @@ from .doctor import check_federated, render as render_checks
 from .executor import Executor
 from .ledger import build_ledger, rank_unlocks
 from .model import Verdict
+from .orchestration_demo import ORCHESTRATION_SCENARIOS, run_orchestration_demo
 from .registry import FEDERATED, registry
 from .throughput import illustrative_genomics_plan, render_report
 from .workcell import Workcell
@@ -162,6 +163,14 @@ def _throughput(args) -> int:
   return 0
 
 
+def _orchestrate(args) -> int:
+  """Exercise resource locks, evidence gates, bounded recovery, and provenance."""
+  report = run_orchestration_demo(args.scenario)
+  print("SYNTHETIC WORKCELL ORCHESTRATION - NO HARDWARE CLAIM\n")
+  print(report.render())
+  return 0 if report.succeeded else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
   p = argparse.ArgumentParser(prog="autonomous-lab", description=__doc__)
   sub = p.add_subparsers(dest="cmd", required=True)
@@ -220,6 +229,13 @@ def build_parser() -> argparse.ArgumentParser:
   )
   tp.add_argument("--samples", type=int, default=96)
   tp.set_defaults(func=_throughput)
+
+  orch = sub.add_parser(
+    "orchestrate",
+    help="synthetic workcell task with atomic resource locks and bounded recovery",
+  )
+  orch.add_argument("--scenario", choices=ORCHESTRATION_SCENARIOS, default="pass")
+  orch.set_defaults(func=_orchestrate)
 
   return p
 

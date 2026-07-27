@@ -44,6 +44,11 @@ jobs:
           autonomous-lab loop --scenario pass
           autonomous-lab loop --scenario vision_error || [ $? -eq 1 ]
           autonomous-lab loop --scenario missing_evidence || [ $? -eq 1 ]
+          autonomous-lab orchestrate --scenario pass
+          autonomous-lab orchestrate --scenario transient_retry
+          autonomous-lab orchestrate --scenario vision_recovery
+          autonomous-lab orchestrate --scenario resource_busy || [ $? -eq 1 ]
+          autonomous-lab orchestrate --scenario fatal_driver_error || [ $? -eq 1 ]
           autonomous-lab throughput --samples 96
 
   lint:

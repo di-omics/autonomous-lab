@@ -34,6 +34,18 @@ from .intelligence import (
 )
 from .ledger import Ledger, StepVerdict, Unlock, build_ledger, cost_step, rank_unlocks
 from .model import Artifact, Protocol, Role, Step, Tier, Verdict, ZeroDecodeOp
+from .orchestrator import (
+  AttemptRecord,
+  OperationResult,
+  OperationStatus,
+  OrchestrationReport,
+  ResourceBusy,
+  ResourceLease,
+  ResourceManager,
+  TaskFinalState,
+  WorkcellOrchestrator,
+  WorkcellTask,
+)
 from .provenance import LedgerEvent, RunLedger, SampleState, SampleTracker
 from .registry import FEDERATED, FederatedSpec, InstrumentSpec, declared, registry, spec
 from .throughput import CapacityStage, ThroughputPlan, ThroughputReport
@@ -41,6 +53,7 @@ from .workcell import InstrumentConfig, Workcell
 
 __all__ = [
   "Artifact",
+  "AttemptRecord",
   "CapacityStage",
   "Comparator",
   "DecisionAction",
@@ -59,9 +72,15 @@ __all__ = [
   "Ledger",
   "LedgerEvent",
   "Observation",
+  "OperationResult",
+  "OperationStatus",
+  "OrchestrationReport",
   "PermissionDecision",
   "Protocol",
   "Role",
+  "ResourceBusy",
+  "ResourceLease",
+  "ResourceManager",
   "RunLedger",
   "RunReport",
   "SampleState",
@@ -70,11 +89,14 @@ __all__ = [
   "StepResult",
   "StepVerdict",
   "Tier",
+  "TaskFinalState",
   "ThroughputPlan",
   "ThroughputReport",
   "Unlock",
   "Verdict",
   "Workcell",
+  "WorkcellOrchestrator",
+  "WorkcellTask",
   "ZeroDecodeOp",
   "build_ledger",
   "cost_step",

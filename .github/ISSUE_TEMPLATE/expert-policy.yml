@@ -1,0 +1,62 @@
+name: Expert policy proposal
+description: Encode assay acceptance criteria, evidence sources, and bounded recovery
+title: "[policy] "
+labels: [expert-policy]
+body:
+  - type: input
+    id: workflow
+    attributes:
+      label: Workflow and decision boundary
+      placeholder: Commit a quantified library to pooling
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: Domain owner
+      description: Role or expertise responsible for approving this policy.
+    validations:
+      required: true
+  - type: textarea
+    id: sample_state
+    attributes:
+      label: Required sample state
+      description: Identity, expected location, custody, and recoverability assumptions.
+    validations:
+      required: true
+  - type: textarea
+    id: gates
+    attributes:
+      label: Acceptance gates and evidence sources
+      description: For each fact, name the metric, allowed source, acceptance criterion, and rationale.
+    validations:
+      required: true
+  - type: textarea
+    id: failures
+    attributes:
+      label: Failure classification and response
+      description: Name retryable, recoverable, terminal, and ambiguous states with finite budgets.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Existing validation evidence
+      description: Synthetic, simulated, dry hardware, supervised hardware, wet/bio, or independently reproduced.
+    validations:
+      required: true
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: What this policy does not establish
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: Missing evidence stops; no model or operator shortcut is implied.
+          required: true
+        - label: No patient data, secret, or real sample identifier is included.
+          required: true

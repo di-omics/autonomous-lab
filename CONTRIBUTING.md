@@ -15,6 +15,8 @@ and checks that make the automation ledger harder to fool.
    confirmation boundaries in the relevant controller repository.
 5. Add a failing test for any corrected overclaim, stale run-card path, unsafe skip, or
    provenance inconsistency.
+6. Workcell adapters return a typed `OperationResult`; they do not mutate sample
+   provenance directly or acquire a second driver process behind the orchestrator.
 
 ## Development
 
