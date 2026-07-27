@@ -94,7 +94,7 @@ audit chain: VALID - 7 events form a valid chain
 | --- | --- | --- |
 | Feedback control and QC | Applies numeric or categorical acceptance gates to plate-reader, assay, or instrument observations; returns continue, retry, recover, escalate, or stop | Demo observations and ranges are synthetic until replaced by a lab-approved policy and live integration |
 | Computer vision and error handling | Gates labware pose, seal presence, liquid presence, or other visible state; encodes the exact recovery when a benchmark fails | Vision cannot stand in for non-visible concentration, interlock, or instrument state |
-| Workcell orchestration | Atomically leases every camera, robot, instrument, or station a task needs; checks sample location; bounds retry and recovery; releases resources on every terminal path | Device adapters are injected and keep their own arming boundary; bundled operations are synthetic |
+| Workcell orchestration | Atomically leases every camera, robot, instrument, or station a task needs inside one process; checks sample location; bounds retry and recovery; releases resources on every terminal path | Device adapters are injected and keep their own arming boundary; a durable cross-process lease is still owed |
 | Throughput | Computes per-stage capacity, setup and handoff overhead, parallel-resource effects, the bottleneck, and a conservative serial upper bound | Every duration is labeled measured or assumed; the bundled example is assumed |
 | Sample tracking and provenance | Records registration, derivation, movement, consumption, and lineage in the same hash-chained run record as observations and decisions | Duplicate IDs, impossible derivations, and post-consumption moves are refused |
 | Laboratory intelligence | Turns tacit expert judgment into versioned `ExpertPolicy` gates with required evidence sources, rationale, failure action, and recovery | A model cannot waive a gate or promote missing evidence into permission |
@@ -180,10 +180,12 @@ are proved.
 7. move the sample in provenance only after the operation succeeds
 8. release every resource on success, stop, escalation, or adapter failure
 
-The one-driver-per-instrument rule is enforced by the same resource manager used for
-cameras, movers, robot arms, and stations. Expected adapter failures are typed as
-`retryable`, `recoverable`, or `failed`; untyped results and unexpected exceptions fail
-closed and enter the audit chain.
+Within one orchestrator process, the one-driver-per-instrument rule uses the same resource
+manager as cameras, movers, robot arms, and stations. A production deployment still
+needs a durable inter-process or distributed lease so a second external driver cannot
+bypass the in-memory manager. Expected adapter failures are typed as `retryable`,
+`recoverable`, or `failed`; untyped results and unexpected exceptions fail closed and
+enter the audit chain.
 
 ## Instrument control: what is real
 
@@ -274,7 +276,9 @@ CI runs on Python 3.9 and 3.12, lints with Ruff, and enforces ASCII-only tracked
    explicit false-accept limits.
 3. Persist and sign run ledgers outside process memory; connect sample IDs to the lab's
    existing source of truth.
-4. Replace illustrative timing with measured stage and handoff data, then validate safe
+4. Back resource ownership with a durable cross-process lease, then prove that competing
+   driver processes cannot bypass it.
+5. Replace illustrative timing with measured stage and handoff data, then validate safe
    overlap across multiple resource-leased tasks.
-5. Reproduce one bounded workflow on independently controlled hardware and turn the
+6. Reproduce one bounded workflow on independently controlled hardware and turn the
    integration into a paid external pilot.

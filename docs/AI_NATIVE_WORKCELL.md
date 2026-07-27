@@ -92,11 +92,14 @@ propose
 ```
 
 Atomic leasing matters because one laboratory action may need a robot arm, overhead
-camera, instrument, and staging station at once. If any resource is occupied, the task
-acquires none and calls neither its evidence provider nor its operation adapter.
+camera, instrument, and staging station at once. Inside one orchestrator process, if any
+resource is occupied, the task acquires none and calls neither its evidence provider nor
+its operation adapter.
 
-The one-driver-per-instrument constraint is a resource rule, not a README warning. It is
-represented by the same lease used for cameras, movers, arms, and stations.
+The one-driver-per-instrument constraint must become a resource rule, not remain a README
+warning. The public manager applies the same in-process lease to cameras, movers, arms,
+and stations. It does not stop a separate controller process; production therefore needs
+a durable inter-process or distributed lease around the driver boundary.
 
 ## Operational memory, not model memory
 

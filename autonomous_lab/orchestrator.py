@@ -174,7 +174,11 @@ class ResourceLease:
 
 
 class ResourceManager:
-  """Atomically enforce one active owner for every workcell resource."""
+  """Atomically enforce one active owner per resource inside this process.
+
+  A production workcell still needs a durable inter-process or distributed lease so a
+  second controller process cannot bypass this in-memory manager.
+  """
 
   def __init__(self):
     self._owners: Dict[str, str] = {}
