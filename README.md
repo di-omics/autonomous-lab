@@ -1,42 +1,96 @@
 # autonomous-lab
 
-Whether a lab can close a loop from hypothesis to evidence, and which leg breaks first.
+[![CI](https://github.com/di-omics/autonomous-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/di-omics/autonomous-lab/actions/workflows/ci.yml)
 
-[plr-reverse-engineer](https://github.com/di-omics/plr-reverse-engineer) brings lab
-instruments under PyLabRobot control one at a time.
-[plr-tested](https://github.com/di-omics/plr-tested) is the PyLabRobot code that has
-actually been run on real hardware. This asks the question that only makes sense across
-all of them at once: given the instruments on the bench and the command sets decoded so
-far, how much of a real protocol runs unattended, and what exactly is blocking the rest?
+**An evidence ledger for lab autonomy.**
 
-It answers by costing every step against the actual state of the code. Nothing here is
-asserted. The registry is derived from `plr_re.protocolmap.SEEDS`, verdicts are computed
-from the resolved `ProtocolMap`, and a step counts as automated only if its command is
-genuinely decoded. There is no field a protocol author can set to declare one.
+Can this lab close a loop from hypothesis to evidence, and which leg breaks first?
+`autonomous-lab` evaluates four separate legs -- **execute, measure, decide, and record** --
+against the device capabilities, run cards, hardware evidence, QC gates, failure detectors,
+and custody records that actually exist. It stops where the evidence stops.
 
-Executing the protocol is only the first of four things a lab must do. It also has to
-**measure** a result that means something, **decide** what follows, and **record** it well
-enough to replay. Those three are usually assumed. Here they are computed, against the same
-evidence, and they fail for different reasons than execution does.
+## Current reference result
 
+Reference mode: `single_cell_genomics` with the sibling `plr-tested` checkout wired in via
+`--plr-tested`. Without that evidence source, federated hardware steps correctly remain
+unverified.
+
+| Question | Evidence-backed answer |
+| --- | --- |
+| Can the loop close? | **No: 0 of 4 legs close** |
+| How far can execution run unattended? | **Step 1 of 18**, then a physical cartridge-loading stop |
+| What are the step verdicts? | 3 automated / 2 supervised / 8 blocked / 3 manual / 1 written / 1 broken |
+| Can the protocol's QC gates fire? | **No: 2 of 2 are unevaluable** |
+| Would destructive failures be noticed? | **Not all: 6 have no effective detection path** |
+| Can the run record prove sample custody? | **No: 5 physical transfers are unobserved** |
+| Do the hardware citations still agree with their source? | **Yes: all 49 checkable claims hold** |
+
+The unflattering result is the product behavior. A later automated step does not make an
+unsupported workflow autonomous, a sent command is not a measured result, and a hash-linked
+log of intent is not proof that the right sample moved.
+
+## See it in 60 seconds
+
+```bash
+git clone https://github.com/di-omics/autonomous-lab.git
+git clone https://github.com/di-omics/plr-tested.git
+python -m pip install -e ./autonomous-lab
+
+autonomous-lab loop --plr-tested ./plr-tested single_cell_genomics
+autonomous-lab doctor --plr-tested ./plr-tested
 ```
-pip install 'autonomous-lab @ git+https://github.com/di-omics/autonomous-lab'
 
-autonomous-lab loop single_cell_genomics      # can this lab close a loop? which leg breaks?
+```text
+EXECUTE   BROKEN   unattended execution stops at step 1 of 18
+MEASURE   BROKEN   2 of 2 QC gates cannot be evaluated
+DECIDE    BROKEN   6 destructive failure modes have no effective detector
+RECORD    BROKEN   5 custody transfers are unobserved
 
-autonomous-lab stock                          # every instrument, its role, how far its map is
-autonomous-lab ledger single_cell_genomics    # cost a protocol step by step
-autonomous-lab gaps                           # the RE queue, ranked by steps freed
-autonomous-lab doctor --plr-tested ../plr-tested   # check my claims against your checkout
-autonomous-lab run single_cell_genomics       # run it as far as it honestly goes
+4 of 4 legs broken. The loop does not close.
+```
 
-autonomous-lab qc single_cell_genomics        # can the QC gates be evaluated at all?
-autonomous-lab failures single_cell_genomics  # what goes wrong, and would anything notice?
-autonomous-lab vision                         # what a camera catches; what none ever will
-autonomous-lab throughput single_cell_genomics  # plates/day, or why that number does not exist
-autonomous-lab provenance single_cell_genomics  # what could be proven about a run afterwards
-autonomous-lab lineage single_cell_genomics   # which cell did this read come from?
-autonomous-lab knowledge                      # encoded expert judgment and robot benchmarks
+Diagnostic commands exit non-zero while the reported capability is incomplete, so they
+can be used as CI gates rather than reports that always pass.
+
+## How it works
+
+```mermaid
+flowchart LR
+    P["Protocol + workcell"] --> L["Evidence ledger"]
+    H["Run cards + hardware evidence"] --> L
+    L --> E["EXECUTE"]
+    L --> M["MEASURE"]
+    L --> D["DECIDE"]
+    L --> R["RECORD"]
+```
+
+[`plr-reverse-engineer`](https://github.com/di-omics/plr-reverse-engineer) captures and
+decodes commands for instruments without usable APIs.
+[`plr-tested`](https://github.com/di-omics/plr-tested) preserves code, run cards, physical
+hardware results, and known failures. This repository computes what those facts mean for a
+real protocol today.
+
+The registry is derived from `plr_re.protocolmap.SEEDS`, verdicts are computed from the
+resolved `ProtocolMap`, and a step counts as automated only if its command is genuinely
+decoded. There is no field a protocol author can set to declare one.
+
+## Command surface
+
+```bash
+autonomous-lab loop --plr-tested ../plr-tested single_cell_genomics  # can this lab close a loop?
+autonomous-lab stock                            # instruments, roles, and map coverage
+autonomous-lab ledger --plr-tested ../plr-tested single_cell_genomics  # cost every step
+autonomous-lab gaps                             # rank reverse-engineering work by steps freed
+autonomous-lab doctor --plr-tested ../plr-tested  # cross-check hardware claims
+autonomous-lab run --plr-tested ../plr-tested single_cell_genomics   # first honest stop
+
+autonomous-lab qc --plr-tested ../plr-tested single_cell_genomics  # can QC gates be evaluated?
+autonomous-lab failures --plr-tested ../plr-tested single_cell_genomics  # failure detection
+autonomous-lab vision                           # what cameras can and cannot catch
+autonomous-lab throughput --plr-tested ../plr-tested single_cell_genomics  # plates/day
+autonomous-lab provenance --plr-tested ../plr-tested single_cell_genomics  # run evidence
+autonomous-lab lineage --plr-tested ../plr-tested single_cell_genomics  # sample identity
+autonomous-lab knowledge                        # expert judgment and robot benchmarks
 ```
 
 ## What it reports today
@@ -50,7 +104,8 @@ checkout wired in via `--plr-tested`:
 | automated | 3 of 18 | run headless today: two link preflights and the AVITI run-folder read |
 | supervised | 2 of 18 | a validated run card exists in plr-tested, gated on a confirm token and an operator |
 | blocked | 8 of 18 | the command is undecoded; the coverage gate refuses the run |
-| manual | 4 of 18 | seating a cartridge, loading a flow cell, and two STAR steps nobody has written a validated script for |
+| manual | 3 of 18 | seating a cartridge, loading a flow cell, and library pooling have no validated automation |
+| written | 1 of 18 | a STAR bead-cleanup run card exists and runs dry, but has not run on physical hardware |
 | broken | 1 of 18 | the run card exists, was run on the instrument, and failed |
 
 **An unattended run reaches step 1 of 18 before it stops.** That number, not the 17%
@@ -65,8 +120,8 @@ on `ABSOLUTE MTP,Y=`, 2 of 2, and the reader has never returned an OD matrix. Ca
 would make a known defect look like unwritten work. One means do reverse-engineering; the
 other means debug a real failure. A planner needs to know which.
 
-The reason the numbers are this low is the honest one. Across all six reverse-engineered
-instruments, **0 of 54 seeded commands are decoded**. Not one of them can be driven
+The reason the numbers are this low is the honest one. Across all five reverse-engineered
+instruments, **0 of 45 seeded commands are decoded**. Not one of them can be driven
 headlessly, and plr-re's own coverage gate refuses an armed run against an incomplete map.
 The only real instrument contact available today is the AVITI run-folder read, USB
 enumeration, and two socket probes. This tool exists to say that precisely, and to say
@@ -75,7 +130,7 @@ what would change it.
 ## Execution is one leg of four
 
 ```
-$ autonomous-lab loop single_cell_genomics
+$ autonomous-lab loop --plr-tested ../plr-tested single_cell_genomics
 
   EXECUTE   BROKEN
       an unattended run reaches step 1 of 18; it stops at 'manual_load'
@@ -101,7 +156,7 @@ reads comes from a step that is blocked, manual, or broken. Both genomics gates 
 state, and the second one is the interesting case:
 
 ```
-$ autonomous-lab qc single_cell_genomics
+$ autonomous-lab qc --plr-tested ../plr-tested single_cell_genomics
 
   UNSATISFIABLE  library_quant_before_flow_cell
       protects   committing a flow cell and a sequencing run to an unquantified library
@@ -128,7 +183,7 @@ work: the kit insert was established at nanograms and the sample is picograms.
 ### DECIDE: the failures nothing would catch
 
 ```
-$ autonomous-lab failures single_cell_genomics
+$ autonomous-lab failures --plr-tested ../plr-tested single_cell_genomics
 
   14 failure mode(s): 9 silent, 6 silent AND destructive, 7 worse than planned
   4 of the silent ones are invisible to any camera
@@ -176,7 +231,7 @@ is not a safety device -- it is worse than none, because the operator stops look
 ### Throughput: an honest refusal
 
 ```
-$ autonomous-lab throughput single_cell_genomics
+$ autonomous-lab throughput --plr-tested ../plr-tested single_cell_genomics
   timed steps      0 of 18  (0%)
   attended steps   15 of 18 need a human
 
@@ -201,9 +256,9 @@ and humans are not available overnight. Instrument speed cannot raise that ceili
 ### RECORD: where provenance actually breaks
 
 ```
-$ autonomous-lab provenance single_cell_genomics
-  steps an instrument could confirm   3 of 18
-  steps recorded on intent alone      15
+$ autonomous-lab provenance --plr-tested ../plr-tested single_cell_genomics
+  steps an instrument could confirm   5 of 18
+  steps recorded on intent alone      13
   unobserved custody transfers        5
 ```
 
@@ -233,16 +288,16 @@ experiment's conclusion is about a plate. The claim a single-cell run exists to 
 *this variant was in this cell*, and that runs through a different graph.
 
 ```
-$ autonomous-lab lineage single_cell_genomics
+$ autonomous-lab lineage --plr-tested ../plr-tested single_cell_genomics
 
   TODAY     CLAIMED
-      4 step(s) in the chain do not happen in this lab at all, starting at
+      6 step(s) in the chain do not happen in this lab at all, starting at
       'load_protocol', so there is no material to attribute yet
   CEILING   CLAIMED   (every command decoded)
       the material crosses 5 unobserved custody hop(s) ... barcodes read at both
       ends close this, decoding does not
 
-  LINCHPIN  pcr_enrichment_round1_cleanup on star, attested: witnessed
+  LINCHPIN  pcr_enrichment_round1_cleanup on star, attested: nobody
   BLIND MEASUREMENT  read_absorbance on tecan -- reads 96 cell(s) as one number
 ```
 
@@ -257,11 +312,11 @@ the moment it happens.
 
 Three results here are worth more than the verdict.
 
-**The linchpin is a manual step.** Indexing is the only operation whose effect survives
-pooling, so every per-cell claim the run makes rests on it. In this lab it is
-`pcr_enrichment_round1_cleanup`, which has no validated run card, so a person pipettes 96
-different indices into 96 wells and nothing reads back that they landed correctly. The
-sequencing still runs either way, and still returns data.
+**The linchpin is written but unwitnessed.** Indexing is the only operation whose effect
+survives pooling, so every per-cell claim the run makes rests on it. In this lab it is
+`pcr_enrichment_round1_cleanup`: a run card exists and executes dry, but it has never run
+on physical hardware, and nothing reads back that 96 indices landed in the intended 96
+wells. The sequencing still runs either way, and still returns data.
 
 **The only quantification is blind to the failure it should catch.** `read_absorbance`
 measures after pooling, so it reads 96 cells as one number. `bead_pellet_aspirated`
@@ -345,7 +400,7 @@ $ autonomous-lab doctor --plr-tested ../plr-tested
   [ok  ] star.wgs_prep_lysis  run card exists: liquid-handler/starlab_live/00_wgs_prep_1col_src1lysis_src3rxn_dst1_hhs_DRY.py
   [ok  ] star.wgs_prep_lysis  confirm token appears in the run card: RUN_SINGLE_COL_WGS_PREP_HHS
   ...
-  all 16 checkable claims hold.
+  all 49 checkable claims hold.
 ```
 
 For every operation this package calls validated, `doctor` confirms the run card really
@@ -387,11 +442,12 @@ narrow and carry their own caveats.
 ## Three things it refuses to do
 
 1. **Let an instrument's reputation transfer to a step.** plr-tested has a validated
-   whole-genome sequencing preparation addition and a validated PCR enrichment choreography; it has no validated bead cleanup
-   and no validated library pooling. So those cost out as manual even though they name a
-   validated instrument. A federated step is supervised only when a run card for *that
-   step* has been proven. The whole-genome sequencing leg that does count is dry-validated, and the ledger
-   says so in the same breath: its wet form has never run.
+   whole-genome sequencing preparation addition and a validated PCR enrichment
+   choreography. Bead cleanup has a dry run card but no physical execution, so it is
+   `written`; library pooling has no validated automation, so it is `manual`. A federated
+   step is `supervised` only when a run card for *that step* has been proven. The
+   whole-genome sequencing leg that does count is dry-validated, and the ledger says so in
+   the same breath: its wet form has never run.
 2. **Model only part of what would refuse a run.** `GuardedReplayer.setup()` has three
    preconditions, not one: coverage, an endpoint, and a transport a connection class can
    open. `DEFAULT_TRANSPORT` is UNKNOWN for three of these instruments by design, so a
