@@ -16,11 +16,13 @@ import logging
 import sys
 from typing import List
 
+from .demo import SCENARIOS, run_closed_loop_demo
 from .doctor import check_federated, render as render_checks
 from .executor import Executor
 from .ledger import build_ledger, rank_unlocks
 from .model import Verdict
 from .registry import FEDERATED, registry
+from .throughput import illustrative_genomics_plan, render_report
 from .workcell import Workcell
 from . import protocols
 
@@ -146,6 +148,20 @@ def _run(args) -> int:
   return 0 if report.handoff is None else 1
 
 
+def _loop(args) -> int:
+  """Exercise proposal -> evidence gates -> decision -> audit record in simulation."""
+  report = run_closed_loop_demo(args.scenario)
+  print(report.render())
+  return 0 if report.decision.permitted else 1
+
+
+def _throughput(args) -> int:
+  """Report the bottleneck in an explicitly illustrative capacity model."""
+  plan = illustrative_genomics_plan()
+  print(render_report(plan, plan.report(args.samples)))
+  return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
   p = argparse.ArgumentParser(prog="autonomous-lab", description=__doc__)
   sub = p.add_subparsers(dest="cmd", required=True)
@@ -191,6 +207,19 @@ def build_parser() -> argparse.ArgumentParser:
   )
   common(rn)
   rn.set_defaults(func=_run)
+
+  lp = sub.add_parser(
+    "loop",
+    help="synthetic QC + vision + telemetry gate, with a hash-chained decision record",
+  )
+  lp.add_argument("--scenario", choices=SCENARIOS, default="pass")
+  lp.set_defaults(func=_loop)
+
+  tp = sub.add_parser(
+    "throughput", help="illustrative capacity report with explicit bottleneck arithmetic"
+  )
+  tp.add_argument("--samples", type=int, default=96)
+  tp.set_defaults(func=_throughput)
 
   return p
 

@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible software defect or dishonest verdict
+title: "[bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for making the execution boundary harder to fool.
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: Include the command, traceback or output, and the verdict you observed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened?
+    validations:
+      required: true
+  - type: dropdown
+    id: evidence
+    attributes:
+      label: Strongest evidence involved
+      options:
+        - Device-free or synthetic
+        - Dry-run on hardware
+        - Supervised hardware
+        - Independently reproduced hardware
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, OS, dependency commit, and workcell details.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: No secret, patient data, sample identifier, or unsafe actuation credential is included.
+          required: true

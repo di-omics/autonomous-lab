@@ -1,0 +1,53 @@
+name: Hardware validation record
+description: Propose the narrowest claim supported by a supervised instrument run
+title: "[hardware] "
+labels: [hardware-validation]
+body:
+  - type: input
+    id: instrument
+    attributes:
+      label: Instrument and connection path
+      placeholder: Vendor model, transport, endpoint class
+    validations:
+      required: true
+  - type: input
+    id: run_card
+    attributes:
+      label: Run card or code path
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Observed result
+      description: Report successes, failures, operator actions, and the exact stopping point.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Shareable evidence
+      description: Logs, images, hashes, run-folder paths, or another reproducible reference.
+    validations:
+      required: true
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: What this did not validate
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: Smallest claim the evidence supports
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I removed secrets, patient data, and real sample identifiers.
+          required: true
+        - label: I did not classify simulation or a dry run as physical execution.
+          required: true

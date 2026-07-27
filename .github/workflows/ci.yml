@@ -41,6 +41,10 @@ jobs:
           autonomous-lab protocols
           autonomous-lab ledger single_cell_genomics || [ $? -eq 1 ]
           autonomous-lab gaps || [ $? -eq 1 ]
+          autonomous-lab loop --scenario pass
+          autonomous-lab loop --scenario vision_error || [ $? -eq 1 ]
+          autonomous-lab loop --scenario missing_evidence || [ $? -eq 1 ]
+          autonomous-lab throughput --samples 96
 
   lint:
     runs-on: ubuntu-latest
@@ -49,7 +53,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff==0.15.20
+      - run: pip install -e '.[dev]'
       - run: ruff check autonomous_lab tests
 
   ascii:
@@ -59,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: No non-ASCII bytes in tracked text
         run: |
-          if LC_ALL=C grep -rlnP '[\x80-\xFF]' --include='*.py' --include='*.md' --include='*.toml' .; then
+          if LC_ALL=C grep -rlnP '[\x80-\xFF]' --include='*.py' --include='*.md' --include='*.toml' --include='*.yml' --include='*.yaml' .; then
             echo "non-ASCII bytes found in the files above"
             exit 1
           fi

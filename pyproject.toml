@@ -4,11 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autonomous-lab"
-version = "0.1.0"
-description = "How much of an end-to-end lab run happens without a human, and what is in the way"
+version = "0.2.0"
+description = "Evidence, permission, provenance, and capacity for autonomous laboratory workflows"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "di-omics" }]
+license = { file = "LICENSE" }
+keywords = [
+  "autonomous-lab",
+  "lab-automation",
+  "pylabrobot",
+  "scientific-agents",
+  "provenance",
+  "quality-control",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+]
 
 # plr-re is the only dependency: this package derives its instrument registry from
 # plr_re.protocolmap.SEEDS and calls plr-re's zero-decode readers. It is not on PyPI, so
@@ -18,7 +35,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "ruff==0.15.20"]
 
 [project.scripts]
 autonomous-lab = "autonomous_lab.cli:main"
