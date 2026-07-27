@@ -10,11 +10,11 @@
 1. How much of this protocol can the workcell execute today, and what exactly blocks the rest?
 2. Given assay QC, vision, telemetry, and sample history, is the proposed next action permitted?
 
-It combines an evidence-derived automation ledger, deterministic expert gates, atomic
-workcell resource leases, sample provenance, recovery decisions, and throughput
-arithmetic. Unsupported actions stop at the boundary. Synthetic demonstrations say they
-are synthetic. Hardware claims are checked against the code and run cards that support
-them.
+It combines an evidence-derived automation ledger, deterministic expert gates, reviewed
+operation contracts, atomic workcell resource leases, sample provenance, typed recovery,
+and throughput arithmetic. Unsupported actions stop at the boundary. Synthetic
+demonstrations say they are synthetic. Hardware claims are checked against the code and
+run cards that support them.
 
 Public developer prototype for [Clair](https://clair.bio), built by
 [Di Hu](https://reinhaudt.com).
@@ -23,14 +23,21 @@ Public developer prototype for [Clair](https://clair.bio), built by
 
 ```mermaid
 flowchart LR
-  A["Scientist, model, or robot proposes an action"] --> D{"Deterministic evidence gates"}
-  B["Assay QC, including plate-reader measurements"] --> D
-  C["Vision, telemetry, and sample state"] --> D
-  D -->|pass| E["Atomic resource lease and permission at the execution boundary"]
-  D -->|fail| F["Retry, recover, escalate, or stop"]
-  E --> G["Hash-chained run and provenance ledger"]
-  F --> G
-  G --> H["Replay, audit, benchmark, and next proposal"]
+  A["Scientist, model, or robot proposes an action"] --> T["Verify ledger; claim task; check sample"]
+  T --> B{"Exact reviewed contract approved?"}
+  B -->|yes| C["Lease sample and workcell resources"]
+  B -->|no| F["Block, retry, recover, escalate, or stop"]
+  C --> D{"Fresh deterministic evidence gates"}
+  Q["Assay QC, vision, telemetry, and sample state"] --> D
+  D -->|pass| I["Expiring permit and approved adapter"]
+  D -->|fail| F
+  I --> J{"Post-operation evidence policy"}
+  J -->|supported| G["Advance sample provenance"]
+  J -->|unknown| K["Retain last confirmed location; quarantine"]
+  F --> L
+  K --> L
+  G --> L["Hash-chained run ledger"]
+  L --> H["Replay, audit, benchmark, and next proposal"]
 ```
 
 Models propose. Versioned, assay-specific rules decide. The execution layer still has to
@@ -44,7 +51,7 @@ cross-repository architecture and the role of the overarching domain expert.
 ## Run it in 30 seconds
 
 ```bash
-pip install 'autonomous-lab @ git+https://github.com/di-omics/autonomous-lab'
+pip install 'autonomous-lab @ git+https://github.com/di-omics/autonomous-lab@agent/closed-loop-intelligence'
 
 # A fully passing synthetic QC + vision + telemetry decision.
 autonomous-lab loop --scenario pass
@@ -60,6 +67,9 @@ autonomous-lab orchestrate --scenario vision_recovery
 
 # A competing task owns the mover, so no evidence adapter or operation is called.
 autonomous-lab orchestrate --scenario resource_busy
+
+# A driver timeout after possible motion quarantines the sample instead of replaying it.
+autonomous-lab orchestrate --scenario ambiguous_driver_timeout
 
 # Find the bottleneck in an explicitly illustrative capacity model.
 autonomous-lab throughput --samples 96
@@ -94,10 +104,10 @@ audit chain: VALID - 7 events form a valid chain
 | --- | --- | --- |
 | Feedback control and QC | Applies numeric or categorical acceptance gates to plate-reader, assay, or instrument observations; returns continue, retry, recover, escalate, or stop | Demo observations and ranges are synthetic until replaced by a lab-approved policy and live integration |
 | Computer vision and error handling | Gates labware pose, seal presence, liquid presence, or other visible state; encodes the exact recovery when a benchmark fails | Vision cannot stand in for non-visible concentration, interlock, or instrument state |
-| Workcell orchestration | Atomically leases every camera, robot, instrument, or station a task needs inside one process; checks sample location; bounds retry and recovery; releases resources on every terminal path | Device adapters are injected and keep their own arming boundary; a durable cross-process lease is still owed |
+| Workcell orchestration | Requires an exact contract fingerprint in an in-memory deployment approval registry; derives action scope, budgets, resources, policies, and adapters from it; shares process-wide leases by workcell namespace; issues expiring attempt permits; checks post-operation evidence before provenance can advance | Injected adapters retain their hardware arming boundary and must enforce persistent idempotency at the command boundary; durable cross-process leases and signed/durable approvals are still owed |
 | Throughput | Computes per-stage capacity, setup and handoff overhead, parallel-resource effects, the bottleneck, and a conservative serial upper bound | Every duration is labeled measured or assumed; the bundled example is assumed |
-| Sample tracking and provenance | Records registration, derivation, movement, consumption, and lineage in the same hash-chained run record as observations and decisions | Duplicate IDs, impossible derivations, and post-consumption moves are refused |
-| Laboratory intelligence | Turns tacit expert judgment into versioned `ExpertPolicy` gates with required evidence sources, rationale, failure action, and recovery | A model cannot waive a gate or promote missing evidence into permission |
+| Sample tracking and provenance | Records registration, derivation, movement, consumption, uncertainty quarantine, and lineage in the same hash-chained run record as observations and decisions | Duplicate IDs, impossible derivations, post-consumption moves, and reuse of uncertain samples are refused |
+| Laboratory intelligence | Turns tacit expert judgment into fingerprinted `ExpertPolicy` gates with required evidence sources, freshness limits, rationale, failure action, and named recovery | A model cannot waive a gate, reuse a policy for an unrelated operation contract, or promote missing/stale evidence into permission |
 
 ## What exists today
 
@@ -142,19 +152,25 @@ facts:
 - `telemetry`: readiness, interlocks, temperatures, pressures, and controller state
 - `operator`: explicit human evidence, never silently treated as machine evidence
 
-Missing evidence stops. Evidence from the wrong source stops. A policy can select a
-bounded retry or expert recovery for an observed failure, but it cannot soften unknown
-physical state.
+Missing, stale, future-dated, malformed, or wrong-source evidence stops. Timezone-aware
+timestamps are normalized before choosing the latest observation. A policy can select a
+bounded retry or named expert recovery for an observed failure, but it cannot soften
+unknown physical state.
 
 ### 3. Auditable run and sample provenance
 
 `autonomous_lab.provenance` writes each event with its sequence, sample or instrument
 subject, action, JSON payload, timestamp, previous event hash, and its own SHA-256 hash.
-Replay detects changed payloads, missing records, and reordered events.
+Replay detects changed payloads, reordering, and deletion from the middle of the available
+record. Tail deletion is detectable only when the chain head or event count was committed
+externally; this in-memory prototype does not yet provide that external commitment.
 
 `SampleTracker` uses that same ledger for sample identity, parent-child lineage, location,
-and consumption. The decision record and the material record therefore share one chain
-instead of drifting in separate databases.
+consumption, and uncertainty. Its public mapping is read-only and exposes immutable
+`SampleState` values; later tracker transitions remain visible through that live view. The
+decision record and material record therefore share one process-local, in-memory chain
+instead of drifting in separate databases. Durable storage and a laboratory source of
+truth remain production work.
 
 ### 4. Honest throughput planning
 
@@ -171,21 +187,39 @@ are proved.
 
 `autonomous_lab.orchestrator` turns a proposal into one bounded workcell task:
 
-1. verify the sample is available at the location recorded in provenance
-2. atomically lease every required resource, or acquire none
-3. gather assay, vision, and telemetry evidence
-4. evaluate the versioned expert policy
-5. call an injected typed operation only after permission
-6. retry or recover within explicit budgets, then escalate rather than loop forever
-7. move the sample in provenance only after the operation succeeds
-8. release every resource on success, stop, escalation, or adapter failure
+1. verify the ledger, claim a unique task ID, and check the sample's initial provenance
+2. require the exact contract fingerprint in the deployment's in-memory approval registry;
+   derive locations, budgets, mandatory resources, policies, and adapters from that contract
+3. atomically lease the task ID, sample ID, and every required resource, or acquire none;
+   enter exclusive `SampleTracker` custody and re-check provenance under both locks
+4. bind every `$sample` gate to the task's exact sample and require every other gate subject
+   to name a leased resource; then collect fresh, source-appropriate evidence
+5. evaluate permission inside the orchestrator's non-injectable deterministic policy engine
+6. append operation intent and issue the approved adapter an expiring attempt permit that
+   carries a deterministic idempotency key
+7. retry only a certified no-sample-state-change result; run only the contract's named,
+   versioned recovery, within contract-derived finite budgets
+8. detach and validate the typed result, then evaluate sample-bound post-operation evidence
+   captured after the operation-completion record
+9. re-verify the ledger and evidence freshness immediately before advancing provenance;
+   otherwise retain the last confirmed location and record the possible destination while
+   quarantining ambiguous sample state
+10. release the exact lease generation before appending the terminal task event
 
-Within one orchestrator process, the one-driver-per-instrument rule uses the same resource
-manager as cameras, movers, robot arms, and stations. A production deployment still
-needs a durable inter-process or distributed lease so a second external driver cannot
-bypass the in-memory manager. Expected adapter failures are typed as `retryable`,
-`recoverable`, or `failed`; untyped results and unexpected exceptions fail closed and
-enter the audit chain.
+Every `ResourceManager` in the same process and `workcell_namespace` shares one ownership
+registry across runs and orchestrator instances. The namespace is trusted deployment
+configuration that identifies a physical workcell; it must never come from a model or
+task payload. Different namespaces intentionally isolate different workcells. A production
+deployment still needs a durable inter-process or distributed lease so a separate driver
+process cannot bypass this registry.
+
+Policies and operation contracts are fingerprinted into the record alongside adapter ID,
+version, configuration hash, permit, idempotency key, and typed result. Approved adapters
+must reject expired permits and persistently deduplicate the idempotency key at the hardware
+command boundary; the in-memory orchestrator cannot guarantee either after a process crash.
+Untyped results, wrong permits, post-operation evidence failures, and unexpected exceptions
+fail closed. Any possibly changed sample becomes `uncertain` rather than being silently
+reported at the possible destination.
 
 ## Instrument control: what is real
 
@@ -221,7 +255,7 @@ OD matrix. That is `broken`, not `manual` and not `automated`.
 | `autonomous-lab run NAME` | Dry-run scheduling and stop at the first handoff |
 | `autonomous-lab run NAME --armed` | Perform only real read-only operations; never actuates |
 | `autonomous-lab loop --scenario NAME` | Exercise QC, vision, telemetry, recovery, and audit behavior on synthetic evidence |
-| `autonomous-lab orchestrate --scenario NAME` | Exercise atomic workcell locks, bounded retry/recovery, typed driver outcomes, and sample movement |
+| `autonomous-lab orchestrate --scenario NAME` | Exercise reviewed operation contracts, atomic sample/resource locks, execution permits, typed recovery, postconditions, and provenance |
 | `autonomous-lab throughput --samples N` | Report capacity and bottleneck from explicit assumptions |
 
 Reference protocols:
@@ -236,21 +270,27 @@ QC, or flow-cell loading would produce a better autonomy score and a worse lab p
 
 ## Safety invariants
 
-- This package schedules, evaluates, records, and reports. It never actuates.
+- This package contains no hardware driver. `WorkcellOrchestrator` can initiate an
+  injected adapter after contract, evidence, lease, and permit checks; that adapter must
+  still enforce its hardware-specific arming boundary.
 - `run --armed` is limited to read-only discovery, probes, and run-folder reads.
-- Actuation stays in `plr-reverse-engineer`, behind its own `armed` and
-  `allow_actuation` switches, with a human present.
+- The portfolio's current hardware-actuation paths stay in `plr-reverse-engineer`, behind
+  its own `armed` and `allow_actuation` switches, with a human present. Any other injected
+  adapter must enforce an equivalent hardware-specific arming boundary.
 - The executor never skips a blocked step to run a later automatable one.
-- A workcell task acquires its entire resource set atomically; a conflict calls neither
-  its evidence provider nor its operation adapter.
-- Sample provenance is checked before resource acquisition and advances only after a
-  typed successful outcome.
-- Retry and recovery budgets are finite. Exhaustion escalates and leaves the sample at
-  its last proven location.
+- Mandatory resources come from an exact deployment-approved operation contract, not the proposal. A
+  workcell task leases the sample, task ID, and entire resource set atomically; a conflict
+  calls neither its evidence provider nor its operation adapter.
+- Sample provenance is re-checked under the lease and advances only after a typed result
+  and fresh post-operation evidence both pass.
+- Retry and recovery budgets are finite. Only a certified no-sample-change result may be
+  replayed. Exceptions, wrong permits, and ambiguous effects quarantine the sample at its
+  last confirmed location with the possible destination recorded separately.
 - A decoded command still remains blocked when sibling coverage, endpoint, or transport
   preconditions are incomplete.
-- One driver process per instrument is a hard workcell constraint. Competing STAR or
-  ODTC clients can cause resource collisions or steal callbacks.
+- One driver per instrument is a deployment rule enforced among managers that share one
+  in-process workcell namespace. Competing external processes can still collide until a
+  durable cross-process lease surrounds the driver boundary.
 - A model proposal is data. Only a deterministic permission decision can advance a run.
 
 ## Tests
@@ -260,11 +300,14 @@ pip install -e '.[dev]'
 pytest -q
 ```
 
-The suite currently contains **99 device-free tests**. The critical tests try to make the
+The suite currently contains **162 device-free tests**. The critical tests try to make the
 system lie: assert automation for an undecoded command, use vision in place of assay QC,
-continue with missing evidence, tamper with a run record, reuse a sample ID, derive from
-samples in different locations, double-book a robot, exhaust recovery, hide transfer
-overhead, or skip ahead after a stop.
+continue with stale or missing evidence, misorder timezone offsets, tamper with a run
+record, race ledger and sample transitions, reuse a run, sample, task ID, or stale lease,
+pair a policy with the wrong operation or sample, omit a mandatory resource, split one
+workcell across manager instances, invoke the wrong recovery, accept expired evidence or
+permits, mutate returned adapter data, replay ambiguous motion, cancel after possible
+actuation, double-book a robot, hide transfer overhead, or skip ahead after a stop.
 
 CI runs on Python 3.9 and 3.12, lints with Ruff, and enforces ASCII-only tracked text.
 
@@ -274,8 +317,9 @@ CI runs on Python 3.9 and 3.12, lints with Ruff, and enforces ASCII-only tracked
    policy to real OD evidence.
 2. Benchmark labware pose, seal, tip, and liquid-state vision on labeled bench data, with
    explicit false-accept limits.
-3. Persist and sign run ledgers outside process memory; connect sample IDs to the lab's
-   existing source of truth.
+3. Persist and sign run ledgers and contract approvals outside process memory; publish
+   chain heads so tail truncation is detectable; connect sample IDs to the lab's existing
+   source of truth.
 4. Back resource ownership with a durable cross-process lease, then prove that competing
    driver processes cannot bypass it.
 5. Replace illustrative timing with measured stage and handoff data, then validate safe

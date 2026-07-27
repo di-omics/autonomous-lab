@@ -50,6 +50,8 @@ jobs:
           autonomous-lab orchestrate --scenario vision_recovery
           autonomous-lab orchestrate --scenario resource_busy || [ $? -eq 1 ]
           autonomous-lab orchestrate --scenario fatal_driver_error || [ $? -eq 1 ]
+          autonomous-lab orchestrate --scenario postcondition_failure || [ $? -eq 1 ]
+          autonomous-lab orchestrate --scenario ambiguous_driver_timeout || [ $? -eq 1 ]
           autonomous-lab throughput --samples 96
 
   lint:

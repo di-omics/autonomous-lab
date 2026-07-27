@@ -11,12 +11,17 @@ and checks that make the automation ledger harder to fool.
    evidence checked into the repository.
 3. Keep proposal separate from permission. A model output cannot bypass deterministic
    safety, assay-QC, or physical-state gates.
-4. Keep actuation out of this package. Instrument movement belongs behind the arming and
-   confirmation boundaries in the relevant controller repository.
+4. Keep hardware drivers out of this package. The orchestrator may issue a permit to an
+   injected adapter, but instrument movement remains behind the adapter's hardware
+   arming and confirmation boundaries.
 5. Add a failing test for any corrected overclaim, stale run-card path, unsafe skip, or
    provenance inconsistency.
-6. Workcell adapters return a typed `OperationResult`; they do not mutate sample
-   provenance directly or acquire a second driver process behind the orchestrator.
+6. Workcell tasks derive action scope and mandatory resources from the exact
+   `OperationContract` fingerprint approved by the deployment registry. Adapters echo
+   the active permit in a typed `OperationResult`; they do not mutate sample provenance
+   directly or acquire a second driver process behind the orchestrator.
+7. Automatic replay requires a certified `no_change` sample effect. Ambiguous motion is
+   quarantined for reconciliation, never translated into a retry.
 
 ## Development
 

@@ -27,7 +27,7 @@ from .provenance import RunLedger, SampleTracker
 SCENARIOS = ("pass", "qc_fail", "vision_error", "missing_evidence")
 
 
-def library_commit_policy() -> ExpertPolicy:
+def library_commit_policy(sample_subject: str = "library-plate-001") -> ExpertPolicy:
   """Example expert policy for committing a quantified library to sequencing."""
   return ExpertPolicy(
     name="library_commit",
@@ -41,11 +41,14 @@ def library_commit_policy() -> ExpertPolicy:
         Comparator.RANGE,
         (EvidenceKind.ASSAY_QC,),
         DecisionAction.RECOVER,
+        "repeat_quantification",
         "re-read blank and standards; if still out of range, return to cleanup and do not pool",
-        subject="library-plate-001",
+        subject=sample_subject,
         minimum=2.0,
         maximum=10.0,
         rationale="concentration is non-visible assay state; only quantitative QC establishes it",
+        max_age_seconds=300,
+        max_future_skew_seconds=5,
       ),
       EvidenceGate(
         "deck_pose",
@@ -53,10 +56,13 @@ def library_commit_policy() -> ExpertPolicy:
         Comparator.MAXIMUM,
         (EvidenceKind.VISION,),
         DecisionAction.RECOVER,
+        "rehome_plate_mover",
         "re-home the mover, reacquire the fiducial image, and re-estimate plate pose",
-        subject="library-plate-001",
+        subject=sample_subject,
         maximum=1.5,
         rationale="pose error is visible state used to prevent a bad robotic pickup",
+        max_age_seconds=30,
+        max_future_skew_seconds=2,
       ),
       EvidenceGate(
         "seal_present",
@@ -64,9 +70,12 @@ def library_commit_policy() -> ExpertPolicy:
         Comparator.EQUAL,
         (EvidenceKind.VISION,),
         DecisionAction.STOP,
+        "operator_reseal",
         "stop and ask an operator to inspect or reseal the plate before any thermal step",
-        subject="library-plate-001",
+        subject=sample_subject,
         expected=True,
+        max_age_seconds=30,
+        max_future_skew_seconds=2,
       ),
       EvidenceGate(
         "sequencer_ready",
@@ -74,10 +83,13 @@ def library_commit_policy() -> ExpertPolicy:
         Comparator.EQUAL,
         (EvidenceKind.TELEMETRY,),
         DecisionAction.RETRY,
+        "wait_for_sequencer",
         "wait for the control plane to become ready; escalate after the bounded retry budget",
         subject="sequencer-01",
         expected=True,
         rationale="a camera cannot establish control-plane readiness or interlock state",
+        max_age_seconds=15,
+        max_future_skew_seconds=2,
       ),
     ),
   )
@@ -191,6 +203,7 @@ def run_closed_loop_demo(scenario: str = "pass") -> ClosedLoopDemo:
     "commit library plate to sequencing",
     library_commit_policy(),
     observations,
+    evaluated_at="2026-01-01T00:00:04Z",
   )
   ledger.append(
     "decision",
