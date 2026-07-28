@@ -4,9 +4,8 @@ Whether a lab can close a loop from hypothesis to evidence, and which leg breaks
 
 [plr-reverse-engineer](https://github.com/di-omics/plr-reverse-engineer) brings lab
 instruments under PyLabRobot control one at a time.
-[plr-tested](https://github.com/di-omics/plr-tested) is the PyLabRobot code that has
-actually been run on real hardware. This asks the question that only makes sense across
-all of them at once: given the instruments on the bench and the command sets decoded so
+`plr-tested` (private) is the PyLabRobot code that has actually been run on real
+hardware. This asks the question that only makes sense across all of them at once: given the instruments on the bench and the command sets decoded so
 far, how much of a real protocol runs unattended, and what exactly is blocking the rest?
 
 It answers by costing every step against the actual state of the code. Nothing here is
@@ -360,7 +359,7 @@ whether anyone watched it run, so those checks cannot catch the more interesting
 disagreement: plr-tested downgrading an operation to `written` while this package still
 calls it validated.
 
-plr-tested now publishes [`evidence/manifest.json`](https://github.com/di-omics/plr-tested/tree/main/evidence),
+plr-tested now publishes `evidence/manifest.json`,
 its own machine-readable record of what has met an instrument, verified by its own CI under
 its own rules. So `doctor` cross-checks against it, operation by operation:
 
