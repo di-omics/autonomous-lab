@@ -49,6 +49,9 @@ and the lab has to keep running:
   teaching      an expert demonstrating an operation, and a machine measured against that
                 demonstration. A demonstration is data, not authority: one performance is a
                 value with no tolerance, and saying so is the point.
+  printed       whether a 3D-printed fixture may be used for a given purpose. The argument
+                that a lab does not need a vendor to ship labware is only honest if the part
+                you printed is held to the same standard as everything else here.
   feedback      whether a control loop can actually close. A sensor downstream of its own
                 actuator is a post-mortem wearing the costume of a control loop.
 
@@ -121,6 +124,19 @@ from .lineage import (
 )
 from .model import Artifact, Protocol, Role, Step, Tier, Transform, Verdict, ZeroDecodeOp
 from .provenance import Attestation, CustodyGap, Event, RunRecord, provenance_report
+from .printed import (
+  Contact,
+  CriticalDimension,
+  Fitness,
+  Fixture,
+  Material,
+  Process,
+  Sterilization,
+  Use,
+  fitness,
+  materials_reaching,
+  unqualified,
+)
 from .qc import Basis, Criterion, Decision, Gate, Readiness, evaluate, gate_report
 from .teaching import (
   Attainment,
@@ -174,12 +190,14 @@ __all__ = [
   "Closable",
   "Closure",
   "Cohort",
+  "Contact",
   "Controller",
   "Correction",
   "Cover",
   "CoverageReport",
   "CoverageRow",
   "Criterion",
+  "CriticalDimension",
   "CustodyGap",
   "Decision",
   "Demand",
@@ -193,6 +211,8 @@ __all__ = [
   "FailureMode",
   "FederatedSpec",
   "FeedbackReport",
+  "Fitness",
+  "Fixture",
   "Gate",
   "Handoff",
   "InstrumentConfig",
@@ -211,9 +231,11 @@ __all__ = [
   "LoopClosure",
   "MISASSIGNMENT",
   "MachineObservation",
+  "Material",
   "Misassignment",
   "NextDemonstration",
   "Observable",
+  "Process",
   "Protocol",
   "Readiness",
   "Role",
@@ -226,6 +248,7 @@ __all__ = [
   "Step",
   "StepResult",
   "StepVerdict",
+  "Sterilization",
   "Tier",
   "TimeBasis",
   "Traceability",
@@ -234,6 +257,7 @@ __all__ = [
   "Transform",
   "UndeclaredTransform",
   "Unlock",
+  "Use",
   "Verdict",
   "VisionCapability",
   "VisionRequirement",
@@ -254,6 +278,7 @@ __all__ = [
   "estimate",
   "evaluate",
   "feedback_report",
+  "fitness",
   "gate_report",
   "in_flight_exposure",
   "knowledge_summary",
@@ -261,6 +286,7 @@ __all__ = [
   "loop_closure",
   "loop_closure_for",
   "mandatory_gates",
+  "materials_reaching",
   "provenance_report",
   "rank_unlocks",
   "recovery_report",
@@ -272,6 +298,7 @@ __all__ = [
   "trusted_for",
   "undeclared_transforms",
   "unmet_demands",
+  "unqualified",
   "untaught_operations",
   "untrusted_instruments",
 ]

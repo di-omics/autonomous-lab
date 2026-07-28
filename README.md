@@ -400,6 +400,48 @@ measured response data nothing here has. What it *can* say is how many plates ar
 flight between sensor and actuator, since every one of them is committed before the
 correction lands.
 
+## Printing the fixture instead of waiting for it
+
+This portfolio's argument is that a lab does not need a vendor to ship AI-native labware.
+That argument is only honest if a part you printed yourself is held to the same standard as
+everything else here -- and a printed fixture is untested hardware, made in-house, sitting
+inside the working envelope of a moving robot, sometimes near reagents.
+
+`printed` computes whether a specific part may be used for a specific purpose. The load-
+bearing boundary is physical rather than regulatory: **fused-deposition parts were measured
+by computed tomography at 4.05 to 6.32 percent porosity with infill fixed at 100 percent.**
+A part that porous cannot be validated as cleanable, so it does not go in a fluid path, and
+no amount of coating or annealing is accepted here as having fixed that -- post-processing
+is recorded as a claim, not a solution.
+
+The consequences fall out rather than being asserted. Of the materials described here, only
+a certified biocompatible photopolymer reaches culture contact, and only that plus machined
+stock reach sample contact. Everything printable holds things; nothing printable holds
+liquid. A blank fixture is refused for every use, because the failure this module exists to
+prevent is a part that passes by virtue of having nothing declared about it.
+
+Four refusals are worth naming, because each is a real way a printed part fails on a deck:
+
+- **`porous_process_in_fluid_path`** -- the boundary above.
+- **`softens_in_the_cycle`** -- PETG's glass transition is 69-77 C, so a 121 C autoclave
+  cycle relaxes its frozen-in extrusion stresses. The part comes out the wrong shape.
+- **`not_positively_located`** -- an unlocated fixture is a crash waiting for the first
+  knock. It needs no operator error to move, and once it has moved every taught position
+  that references it is wrong with nothing reporting that anything changed.
+- **`dimension_not_measured`** -- a designed dimension is a fact about the model. Desktop
+  tolerance runs about +/-0.5 percent with a +/-0.5 mm floor and scales with length,
+  shrinkage is material and vendor specific, and the first layer comes out wider than the
+  model by roughly the 0.2 mm a slicer compensates by default.
+
+`hardware/tilt_module.scad` is the worked example: a passive fixed-angle tilt fixture that
+pools residual liquid at one side of each well so a tip can reach more of it. No hinge and
+no adjustment, because an adjustable angle is an angle nobody records. It defaults to
+printing the **test coupon** rather than the fixture, so the fit is proven before hours are
+committed. And it states no recovery figure anywhere -- `docs/PRINTED_FIXTURES.md` gives the
+gravimetric protocol that would produce one instead. An unmeasured fixture is a net addition
+of a crash surface, a cleaning obligation, and an uncharacterized material to a workcell
+that had none of them.
+
 ## The RE queue is computed, not argued about
 
 ```
@@ -554,7 +596,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-351 device-free tests. The ones that matter most try to make the layer lie:
+418 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever
