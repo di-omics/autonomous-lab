@@ -23,7 +23,7 @@ measurement would produce it rather than filling the hole.
 **A printed part may hold labware. It may not be labware.**
 
 Fixtures, adapters, nests, risers, guards, jigs, tip-box shims, camera mounts, cable
-routing, the wedge in §6 -- parts whose entire job is to put a certified consumable in a
+routing, the wedge in 6 -- parts whose entire job is to put a certified consumable in a
 known place and keep it there. That is the permitted set, and it is a large and genuinely
 useful set.
 
@@ -55,15 +55,15 @@ The consequences have been measured directly:
   mm and 1 / 2 / 3 perimeters, the authors concluded verbatim that **"no manufacturing
   settings can provide enough sealing against fluid intake."** Thinner layers absorbed
   less; none stopped it. Saturation was reached at 48 h with 1-2 perimeters and 72 h with
-  3. `[EXP: Popescu 2021]`
+ 3. `[EXP: Popescu 2021]`
 - **Acetone vapor smoothing does not seal the part.** In the same study, 45 minutes of cold
   acetone vapor reduced open porosity, and methylene blue dye still stained the treated
   parts after 30 minutes of immersion. The treatment also degraded mechanical properties.
   Smoothing changes what you can see, not what you can clean. `[EXP: Popescu 2021]`
 - Bacteria preferentially colonize the layer lines. Across eight PLA variants plus
   metal-filled, carbon-filled and wood-filled filaments, attachment after 2 h ran to
-  6.5x10^6-1.9x10^7 CFU for *E. coli*, 3.6x10^7-6.15x10^7 for *P. aeruginosa*, and
-  6.6x10^5-2.16x10^6 for *S. aureus*, with biofilms **thickest between the layers** and
+ 6.5x10^6-1.9x10^7 CFU for *E. coli*, 3.6x10^7-6.15x10^7 for *P. aeruginosa*, and
+ 6.6x10^5-2.16x10^6 for *S. aureus*, with biofilms **thickest between the layers** and
   bacteria filling "the valleys" of the layer structure. `[EXP: Hall 2021]`
 - Roughness on an FDM part is wildly anisotropic, which is why a quoted Ra can be
   meaningless. The same study measured Ra of roughly 0.64-1.15 um *along* the layers, and
@@ -76,7 +76,7 @@ manufactured geometries are "expected to increase the difficulty in removing man
 material residues (cleaning) and in sterilization due to the likelihood of increased
 surface area", that "sterilization process validation should account for the complex
 geometry of your device under worst-case conditions", and that worst case includes the
-"combination of largest surface area, greatest porosity". `[STD: FDA 2017 §VI.E]`
+"combination of largest surface area, greatest porosity". `[STD: FDA 2017 VI.E]`
 
 The burden is validation, not prohibition. So: **this guide's research located no published
 study validating an FDM-printed part as cleanable to any recognized standard** (ANSI/AAMI
@@ -92,7 +92,7 @@ organisms it reaches; it does not remove protein, endotoxin, nucleic acid, or ch
 residue, and it fixes protein onto surfaces. Whether steam penetrates the interior void
 network of an FDM part at all is unvalidated -- no study located cultured the interior of
 an autoclaved FDM part or ran biological indicators inside the voids. A part can be sterile
-and still cross-contaminate the next sample. See §3 for what autoclaving does to the
+and still cross-contaminate the next sample. See 3 for what autoclaving does to the
 dimensions, which is a separate disaster.
 
 **"Coat it."** Vacuum epoxy infiltration is a vendor claim (airtight and watertight to 65
@@ -200,8 +200,8 @@ The reasoning, axis by axis.
 
 **Enclosed and actively heated is the axis that decides what you can print at all.** Every
 material worth using for a load-bearing deck fixture -- ABS, ASA, PC -- warps at the sizes
-deck fixtures actually are, and warp is driven by the maximum in-plane dimension (§5). A
-microplate footprint is 127.76 x 85.48 mm `[STD: SLAS 1 §4.1.1.1]` before you add walls,
+deck fixtures actually are, and warp is driven by the maximum in-plane dimension (5). A
+microplate footprint is 127.76 x 85.48 mm `[STD: SLAS 1 4.1.1.1]` before you add walls,
 so a nest is already a large flat part on day one. A passive enclosure is a box that traps
 some waste heat; an actively heated chamber is a controlled variable. Everything else on
 the spec sheet is negotiable and this is not.
@@ -306,17 +306,17 @@ and an unmeasured number that reaches a document becomes a budget nobody measure
 those five lines on the day you order and put the **sum** on the requisition. What this
 guide will assert is which lines cannot be dropped:
 
-- **Metrology is not optional and it is not an accessory.** The qualification ladder in §4
+- **Metrology is not optional and it is not an accessory.** The qualification ladder in 4
   has a MEASURED rung, and a lab with a printer and no measuring instrument physically
   cannot reach it. It can only produce objects. Calipers are the floor; gauge pins or
   blocks for the features that actually register are better.
 - **The drybox is not optional either, and the datasheets say why.** Saturation water
   absorption: PETG 0.51% max `[DS]`, PEEK 0.45% at 23 C and 0.55% at 100 C `[DS]`, ULTEM
-  1010 1.25% `[DS]`. Nylon is worse -- strongly hygroscopic, and moisture both swells the
+ 1010 1.25% `[DS]`. Nylon is worse -- strongly hygroscopic, and moisture both swells the
   part and plasticizes the polymer, dropping its Tg. (This guide's research did not obtain a
   numeric moisture-uptake figure for a PA filament, so the mechanism is stated and the
   number is not.) Wet filament prints badly and prints *differently* on different days,
-  which quietly destroys the repeatability that §5 depends on.
+  which quietly destroys the repeatability that 5 depends on.
 
 ### The two axes this guide could not source
 
@@ -383,7 +383,7 @@ pass/fail is only meaningful next to a cycle.
 | **PC (unfilled resin)** | ~147 C `[DS-2]` | ~124-126 C @1.80, ISO 75 `[DS-2]`; Vicat B/50 ~147 C | pass on thermal grounds | pass on thermal grounds | Grade-specific figures must come from the specific grade sheet -- the source pages for these returned 404/500. Carbonate linkages hydrolyze in wet heat; the molecular-weight-loss and crazing mechanism is well known in device practice and this guide could not source it properly, so it is flagged rather than asserted | `NONE`, `ADJACENT` |
 | **PP** | not on any filament datasheet reached. PP's Tg is below room temperature but no manufacturer source confirmed it -- leave it out rather than guess | none published on the filament TDS | **MARGINAL** | **DO NOT** | The single most dangerous row. One PP copolymer filament has **Tm 137 C** `[DS]` -- a 134 C cycle runs 3 C below its melting point. Homopolymer melts ~160-165 C. Do not carry the reputation of molded PP labware, which is routinely autoclaved, onto PP filament without checking that grade's Tm | `NONE`, `ADJACENT` |
 | **PA / nylon (CF-filled)** | 70 C (PAHT-CF), 85 C (PPA-CF) `[DS-2]` | 170 C @1.8 / 194 C @0.45 (PAHT-CF); 196/227 C (PPA-CF) `[DS-2]` | see notes | see notes | **The HDT column is a trap here.** It sits 100-140 C above Tg because carbon fiber carries the load. Separately, PA is strongly hygroscopic and a steam cycle drives it toward saturation -- moisture swells the part *and* plasticizes the polymer, dropping unfilled nylon's Tg substantially. It will move even if it never softens | `NONE`, `ADJACENT` |
-| **PEI / ULTEM 9085** | **177.3 C** `[DS]` | printed 178.2 C (XY) / 178.4 C (XZ) @66 psi; 170.2 / 172.6 @264 psi `[DS]` | pass | pass | Not printable on any machine in §2. TMA reversal at ~175.9 C upright vs ~193.4 C flat -- print orientation, not polymer, sets deformation onset | `NONE`, `ADJACENT` |
+| **PEI / ULTEM 9085** | **177.3 C** `[DS]` | printed 178.2 C (XY) / 178.4 C (XZ) @66 psi; 170.2 / 172.6 @264 psi `[DS]` | pass | pass | Not printable on any machine in 2. TMA reversal at ~175.9 C upright vs ~193.4 C flat -- print orientation, not polymer, sets deformation onset | `NONE`, `ADJACENT` |
 | **PEI / ULTEM 1010** | **210 C** printed `[DS-2]` / **217 C** molded `[DS]` | 200 C @0.45, 190 C @1.8 (ISO 75) `[DS]`; 215/210 C @66/264 psi (ASTM D648) `[DS-2]` | pass | pass | The ISO-versus-ASTM gap of 15-20 C on nominally identical material is why every figure here carries its method. Water absorption 1.25% at saturation `[DS]` | `NONE`, `ADJACENT` |
 | **PEEK** | onset **143 C**, midpoint 150 C `[DS]` | DTUL **152 C** @1.8 MPa unannealed `[DS]`; Tm 343 C | pass | pass, thinly | Margin at 134 C is 9 C on Tg onset. It passes because the **crystalline phase** carries load above Tg -- and as-printed PEEK from a machine without adequate chamber temperature can be substantially amorphous, in which case it is not the material the datasheet describes. The maker's "suitable for steam sterilisation" statement covers injection-molded granules, not printed parts | `NONE`, `ADJACENT` |
 
@@ -426,13 +426,13 @@ sterility. It establishes thermal survival and nothing else.
   filaments are not a cleanability control -- they leach metal ions, which is a direct
   problem for cell culture and for any assay sensitive to divalent cations, and bacteria
   attached to metal-filled PLA at the same 10^6-10^7 CFU order as plain PLA. `[EXP: Hall
-  2021]`
+ 2021]`
 
 One genuinely favorable finding, recorded because omitting it would be its own dishonesty:
 plain FDM thermoplastics are generally **not** cytotoxic in cell contact. ABS, PETG, PLA and
 Nylon 12 did not reduce human iPSC viability against control in one study, while two SLA
 resins reduced it by roughly 60% and 90%. `[EXP]` That is real, and it does not license
-sample contact, because cytotoxicity was never the reason for the boundary in §1 -- porosity
+sample contact, because cytotoxicity was never the reason for the boundary in 1 -- porosity
 was. It is also not uniform: a preprint reports significant cytotoxicity for PETG and PC,
 and colorants, plasticizers and processing aids differ between spools of nominally identical
 polymer and are not disclosed on consumer filament.
@@ -494,14 +494,14 @@ information about the object beyond "the printer did not fail".
 requirements that are easy to skip:
 
 - *Measure at the temperature the part will work at.* SLAS dimensions are specified at
-  20 C `[STD: SLAS 1-4 §1.2]`, and ANSI/SLAS 6's test method at 25 C +/- 2 C -- so there is
+ 20 C `[STD: SLAS 1-4 1.2]`, and ANSI/SLAS 6's test method at 25 C +/- 2 C -- so there is
   not even one temperature across the standard family. Printed polymers have far higher
   thermal expansion and lower creep resistance than molded PP or PS. A part in tolerance on
   the bench can be out of tolerance at 37 C in an incubator.
 - *Do not trust the bottom face.* The first layer is squished against the bed and comes out
   wider than modeled -- PrusaSlicer ships `elefant_foot_compensation = 0.2` in several of
   its own profiles, and Prusa's documentation puts values around 0.2 mm as typical for a
-  0.4 mm nozzle. The bottom few layers are the least dimensionally trustworthy region of
+ 0.4 mm nozzle. The bottom few layers are the least dimensionally trustworthy region of
   the part, and they are also the region that seats on the deck. Put registration datums
   somewhere else, or account for it explicitly.
 - *A calibration cube proves nothing about a nest.* Tolerance scales with length in every
@@ -517,8 +517,8 @@ requirements that are easy to skip:
   unreachable, so treat the order of magnitude as indicative and the digits as unverified]`
   The practical consequence is real either way: an FDM printer reproduces its own error
   consistently, so **measure and compensate** works even when out-of-the-box accuracy is
-  5-10x worse than repeatability. That loop is the only route to a part that registers
-  properly, and it needs the calipers from §2.
+ 5-10x worse than repeatability. That loop is the only route to a part that registers
+  properly, and it needs the calipers from 2.
 
 **FITTED.** The real plate -- the one from the lot you will actually run, not a
 dimensionally different one from a different vendor -- seats in the part, on the deck, in
@@ -540,7 +540,7 @@ witnessed it. Software having sent the command is `asserted` and is a log line a
 
 Do not report a part at a rung it has not reached, and in particular do not let FITTED read
 as DRY_RUN. **A part that fits by hand has not been qualified for an arm.** The failure mode
-in §5 that puts an instrument at risk -- a part shifting mid-run -- is invisible from every
+in 5 that puts an instrument at risk -- a part shifting mid-run -- is invisible from every
 rung below DRY_RUN, and a printed fixture is exactly the kind of hardware that gets promoted
 straight from "I fitted it, looks great" to a production run.
 
@@ -571,7 +571,7 @@ bed it was printed on.** Mesh bed leveling conforms the first layer *to* the bed
 rather than correcting it, so bed non-flatness transfers into the part's bottom face. One
 measurement project reports peak-to-valley bed variation of a quarter of a millimeter --
 more than two layers at 0.1 mm. `[single anecdote, printer unspecified]` No manufacturer bed
-flatness specification for the machines in §2 could be confirmed; a "0.10 mm" figure
+flatness specification for the machines in 2 could be confirmed; a "0.10 mm" figure
 circulating for one of them traced to forum discussion, not to a spec sheet.
 
 *What it does:* the base rocks, so the plate's true position depends on which corner is
@@ -600,9 +600,9 @@ The arithmetic is what makes this a design problem rather than a curiosity. Acro
 127.76 mm long dimension of a plate footprint:
 
 ```
-  PLA   0.05%  x 127.76 mm  =  0.06 mm
-  PETG  0.15%  x 127.76 mm  =  0.19 mm
-  ABS   0.513% x 127.76 mm  =  0.66 mm
+  PLA 0.05%  x 127.76 mm  = 0.06 mm
+  PETG 0.15%  x 127.76 mm  = 0.19 mm
+  ABS 0.513% x 127.76 mm  = 0.66 mm
 ```
 
 That last figure is larger than the entire SLAS 1 corner-zone tolerance band of +/-0.25 mm.
@@ -654,20 +654,20 @@ part in its printed orientation** rather than on the pellet -- and consumer fila
 datasheets do not carry that value.
 
 Two things are worth saying without a number. Humidity control changes the behavior
-substantially, and the drybox you bought in §2 is already half of that story. And the obvious
-fix -- carbon-filled "ESD-safe" filament -- is excluded here for the reasons in §3: filled
+substantially, and the drybox you bought in 2 is already half of that story. And the obvious
+fix -- carbon-filled "ESD-safe" filament -- is excluded here for the reasons in 3: filled
 grades bring higher roughness, filler-matrix interfaces and extra leachable species to a
 part that sits next to open labware.
 
 ### A lip too shallow to retain the plate at angle
 
-This is the failure that ends §6's worked example if the design is careless, and it is a
+This is the failure that ends 6's worked example if the design is careless, and it is a
 standards problem more than a geometry problem.
 
 **The flange the lip grips is not one thing.** ANSI/SLAS 3-2004 offers **five mutually
-exclusive variants**, and requires the plate to declare which one it meets: §4.1 Short =
-2.41 mm +/- 0.38, §4.2 Medium = 6.10 mm +/- 0.38, §4.3 Tall = 7.62 mm +/- 0.38, §4.4 Short
-with interruptions = 2.41 mm +/- 0.38, §4.5 Dual = 2.41 mm on the short sides and 7.62 mm on
+exclusive variants**, and requires the plate to declare which one it meets: 4.1 Short =
+2.41 mm +/- 0.38, 4.2 Medium = 6.10 mm +/- 0.38, 4.3 Tall = 7.62 mm +/- 0.38, 4.4 Short
+with interruptions = 2.41 mm +/- 0.38, 4.5 Dual = 2.41 mm on the short sides and 7.62 mm on
 the long sides. `[STD]` A lip sized against a tall 7.62 mm flange will not reliably retain a
 2.41 mm short-flange plate. "SBS compliant" on a vendor page does not tell you which variant
 you are getting.
@@ -692,11 +692,11 @@ have in their head.
 - ANSI/SLAS 2-2004 specifies **14.35 mm +/- 0.25 mm** from the resting plane to the maximum
   protrusion of the perimeter wells, and 14.35 mm +/- 0.76 mm overall -- **for a typical
   microplate**. `[STD]` (Note the standard's own Figure 1 misprints the inch equivalent as
-  0.56560 in against the correct 0.5650 in in the clause text. Use the metric value.)
+ 0.56560 in against the correct 0.5650 in in the clause text. Use the metric value.)
 - Plate types that are not typical microplates simply do not comply with SLAS 2 while still
   complying with SLAS 1, 3 and 4. A 96-well 1000 uL deep-well plate is documented at length
-  127.8 mm and width 85.5 mm -- SLAS 1 conformant -- with a height of **44.1 mm**, roughly
-  3x the SLAS 2 figure. Another vendor's 2.2 mL deep-well plate lists 44 mm and advertises
+ 127.8 mm and width 85.5 mm -- SLAS 1 conformant -- with a height of **44.1 mm**, roughly
+ 3x the SLAS 2 figure. Another vendor's 2.2 mL deep-well plate lists 44 mm and advertises
   only an "ANSI-SBS Footprint". `[DS]`
 
 So the accurate framing is: **height is standardized only for standard-height microplates;
@@ -718,11 +718,11 @@ deep-well plate can land there, size for the deep-well plate.
 Four more clauses that will bite a nest designed to nominal dimensions.
 
 - **There are two footprint tolerances, not one.** +/-0.25 mm applies **only** within 12.7 mm
-  of the four outside corners `[STD: SLAS 1 §4.1.1.1]`. Anywhere else along the side the
-  tolerance is **+/-0.5 mm** `[STD: §4.1.1.2]`. A nest cut to "127.76 x 85.48 +/- 0.25" as a
+  of the four outside corners `[STD: SLAS 1 4.1.1.1]`. Anywhere else along the side the
+  tolerance is **+/-0.5 mm** `[STD: 4.1.1.2]`. A nest cut to "127.76 x 85.48 +/- 0.25" as a
   flat statement will jam real plates that bow mid-side and remain fully conformant.
 - **Corner radius is 3.18 mm +/- 1.6 mm** -- a permitted range of 1.58 to 4.78 mm, a 3x
-  spread, scoped to the bottom flange corners specifically. `[STD: §4.1.2.1]` Design
+  spread, scoped to the bottom flange corners specifically. `[STD: 4.1.2.1]` Design
   clearance features against the **maximum** 4.78 mm, not the nominal, or you will bind on
   plates at the top of the range.
 - **Draft is excluded from the standard's numbers.** Every figure note states "Dimensions
@@ -730,19 +730,19 @@ Four more clauses that will bite a nest designed to nominal dimensions.
   standard's dimensions do not describe, and the actual angles are not published anywhere in
   it. A printed nest with vertical walls cut to nominals does not have the same real
   cross-section as the molded plate it is supposed to seat.
-- **SLAS 2 has two alternative compliance parts** and a plate must declare which. §4.1 adds
+- **SLAS 2 has two alternative compliance parts** and a plate must declare which. 4.1 adds
   a minimum 1 mm clearance from the resting plane to the bottom external surface of the
-  wells; §4.2 does not. `[STD]` If a fixture assumes 1 mm of clearance under the wells -- for
-  bottom-reading optics, or a heat block -- a §4.2-compliant plate is not required to give
+  wells; 4.2 does not. `[STD]` If a fixture assumes 1 mm of clearance under the wells -- for
+  bottom-reading optics, or a heat block -- a 4.2-compliant plate is not required to give
   it to you.
 
 And one that saves a wasted investigation: **ANSI/SLAS 6-2012 sets no limits at all.** Its
-§7 states that the standard "specifies definitions and a test method only" and that it is
+7 states that the standard "specifies definitions and a test method only" and that it is
 "not the intent of this standard to state a limit" for well bottom elevation or its
 variation. `[STD]` "SLAS 6 compliant" conveys no flatness or bottom-thickness guarantee
 whatsoever. For any optical path, the instrument's own specification is the requirement.
 
-One FDM-specific conformity note worth designing around: SLAS 1 §4.1.1.3 requires the
+One FDM-specific conformity note worth designing around: SLAS 1 4.1.1.3 requires the
 footprint be "continuous and uninterrupted around the base of the plate." Brim remnants,
 elephant-foot bulges and support scars on a printed part's base are the same class of defect
 in reverse -- they snag stage nests and gripper jaws.
@@ -768,7 +768,7 @@ At best it reaches **MEASURED**. The wedge angle and the lip that retains the pl
 measured against the model. Everything above that is unproven:
 
 - **FITTED** needs the real plate, at working mass, at the design angle, checked for rock
-  and checked for retention -- and per §5 that check has to be done separately for each
+  and checked for retention -- and per 5 that check has to be done separately for each
   flange variant it will hold.
 - **DRY_RUN** needs the arm to run the real aspiration approach against a tilted plate,
   at reduced speed. Tilting changes the geometry the head was taught: the well bottom is no
@@ -778,7 +778,7 @@ measured against the model. Everything above that is unproven:
 - **IN_USE** needs a recorded run with material.
 
 The wedge also creates its own new failure mode, which the flat nest did not have: it puts
-the plate at an angle where a shallow lip stops retaining. That is §5's lip failure, and it
+the plate at an angle where a shallow lip stops retaining. That is 5's lip failure, and it
 is not hypothetical for this part -- it is the part's defining feature.
 
 ### The acceptance test
@@ -827,7 +827,7 @@ the position.
 
 **8. Hold everything else constant and say so.** Same session, same instrument, same
 consumable lot, same filament lot for the wedge itself. A wedge reprinted from a different
-spool is a different part until it has been measured again (§5, shrinkage).
+spool is a different part until it has been measured again (5, shrinkage).
 
 **9. Pre-register the threshold and record its basis.** Decide before the run what
 improvement would make the wedge worth keeping, and record where that target came from. It
@@ -853,19 +853,19 @@ Kept as a list rather than buried, because the gaps are the part most likely to 
 in by somebody's search results.
 
 - **Whether any FDM part has ever been validated as cleanable to a recognized standard.** A
-  targeted search found none. That is the crux of §1 and it did not close.
+  targeted search found none. That is the crux of 1 and it did not close.
 - **Whether steam penetrates and sterilizes the interior voids of an FDM part.** No located
   study cultured the interior of an autoclaved FDM part or ran biological indicators inside
   the void network. Surviving the heat and being sterile are different claims.
 - **How many autoclave cycles any high-temperature polymer survives.** Every specific count
   traced to commercial aggregator pages.
 - **A shrinkage percentage from any filament manufacturer.** Three datasheets were opened;
-  none published one. The slicer defaults in §5 are the best available and they disagree
+  none published one. The slicer defaults in 5 are the best available and they disagree
   with each other.
 - **A warp-per-unit-length rule for large flat parts.** No dataset located measures flatness
   across a range of part sizes. The 3.7 mm / 0.8 mm figures cannot be scaled because the
   specimen dimensions were not stated.
-- **A manufacturer bed-flatness specification** for any machine in §2.
+- **A manufacturer bed-flatness specification** for any machine in 2.
 - **Coefficients of thermal expansion** for ASA and PC. Conflicting values circulate for ABS
   (90e-6 /C versus 120e-6 /C) and the PLA and PETG figures found came from a retailer blog.
   None are printed here.
@@ -882,7 +882,7 @@ in by somebody's search results.
   copies the standards body itself publishes, dated 2011. For anything that goes to print,
   check the purchased controlled copies.
 - **Any manufacturer claim of biocompatibility, cytotoxicity testing, autoclavability, or
-  sample-contact suitability for any printer or stock filament in §2.** There is none on any
+  sample-contact suitability for any printer or stock filament in 2.** There is none on any
   official page read. "Supported filament" lists are printability ratings -- one vendor
   literally grades them "Ideal" and "Capable" -- meaning will-it-extrude-without-clogging.
   Treat the absence as absence, and never read a spec-table material list as a
@@ -904,7 +904,7 @@ Standards and regulatory
   criteria: TOC <= 12 ug/cm^2, ATP <= 22 fmol/cm^2. The widely quoted 6.4 ug/cm^2 protein
   criterion could not be confirmed and is not printed here.
 - US FDA, *Technical Considerations for Additive Manufactured Medical Devices*, issued
-  2017-12-05, §VI.E.
+ 2017-12-05, VI.E.
 - US FDA guidance on the Mouse Embryo Assay for assisted reproduction devices.
 
 Peer-reviewed
@@ -921,14 +921,14 @@ Peer-reviewed
 - Rogers HB, Zhou LT, Kusuhara A, Zaniker E, Shafaie S, Owen BC, Duncan FE, Woodruff TK
   (2021). *Chemosphere* 270:129003. ISO-certified dental resins release ovo-toxic leachates.
 - Kress S, Schaller-Ammann R, Feiel J, Priedl J, Kasper C, Egger D (2020). *Materials*
-  13(13):3011. doi:10.3390/ma13133011. Cytotoxicity of stereolithography photopolymers;
+ 13(13):3011. doi:10.3390/ma13133011. Cytotoxicity of stereolithography photopolymers;
   parylene barrier and its detachment after 5-6 autoclave cycles.
 - Oskui SM et al. (2016). *Environ Sci Technol Lett*. doi:10.1021/acs.estlett.5b00249. Both
   FDM and SLA parts toxic to zebrafish embryos; SLA significantly more so.
 
 Manufacturer datasheets read directly
 - Bambu Lab PETG Basic TDS V3.0; Victrex PEEK 450G TDS (rev. March 2026); SABIC ULTEM Resin
-  1010 TDS (Europe, rev. 20170620); Stratasys ULTEM 9085 MDS (2025); Prusament ASA TDS v1.1;
+ 1010 TDS (Europe, rev. 20170620); Stratasys ULTEM 9085 MDS (2025); Prusament ASA TDS v1.1;
   Prusament PC Blend TDS v1.1; PPprint P-filament TDS v1.001; Polymaker PETG TDS V2.0
   (2025-11-17); Polymaker ASA TDS; 3DXTech 3DXMAX ABS TDS Rev 3.0; Formlabs BioMed Clear TDS
   (doc 2001432-TDS-ENUS-0, rev 04); Stratasys F123 series product specification.
@@ -945,7 +945,7 @@ Vendor pages, captured 2026-07-28
 - Prusa Research product pages for MK4S, CORE One+ and the HT hotend upgrade.
 - QIDI Tech US store Plus4 product and technical-specification pages. Note the Plus4
   marketing page carries a comparison graphic reading "Hot bed 100 / Nozzle 360 / Chamber
-  55" -- those are previous-generation figures shown for contrast, not the Plus4's. An
+ 55" -- those are previous-generation figures shown for contrast, not the Plus4's. An
   automated scrape of that page pulls the wrong three numbers.
 - Intamsys Funmat HT product page.
 - Protolabs Network (Hubs) knowledge base, dimensional accuracy of 3D printed parts.

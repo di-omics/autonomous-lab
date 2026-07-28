@@ -59,7 +59,7 @@ sample: the plate is the barrier.
   test method, and say nothing about material, leachables, extractables, cytotoxicity,
   sterility, or nuclease status.
 - FDM parts are porous by construction. X-ray CT of PLA printed at 100% infill measured
-  4.05 to 6.32% internal porosity across raster settings, with pores concentrated at the
+ 4.05 to 6.32% internal porosity across raster settings, with pores concentrated at the
   shell-to-infill interface -- that is, connected to the outer surface (Wang et al.,
   *Polymers* 11(7):1154, 2019). Immersion testing of ABS found that no combination of
   layer height, perimeter count, or infill pattern sealed a part against fluid intake, and
@@ -67,7 +67,7 @@ sample: the plate is the barrier.
   immersion (Popescu et al., *Polymers* 13(23):4249, 2021).
 - Bacteria preferentially colonize the layer lines. Biofilm was thickest in the grooves
   between printed layers on every polymer tested (Hall et al., *Front. Microbiol.*
-  12:646303, 2021).
+ 12:646303, 2021).
 - Many photopolymer (SLA/DLP/MSLA) resins remain cytotoxic after full manufacturer
   post-cure, including resins carrying ISO 10993 biocompatibility certification, because
   the certification does not cover the exposure this fixture would represent and because
@@ -107,25 +107,25 @@ The groups below are the ones you will actually change.
 
 | parameter | default | note |
 | --- | --- | --- |
-| `plate_len_mm`, `plate_wid_mm` | 127.76, 85.48 | ANSI/SLAS 1-2004 §4.1.1.1 nominals |
-| `plate_footprint_tol_mm` | 0.5 | the §4.1.1.2 mid-side tolerance, not the §4.1.1.1 corner one. See below. |
-| `plate_corner_r_max_mm` | 4.78 | §4.1.2.1 is 3.18 ± 1.6 mm. Use the maximum for a clearance feature. |
-| `plate_flange_h_mm`, `plate_flange_tol_mm` | 6.10, 0.38 | ANSI/SLAS 3-2004 §4.2 medium. Five incompatible variants exist. |
+| `plate_len_mm`, `plate_wid_mm` | 127.76, 85.48 | ANSI/SLAS 1-2004 4.1.1.1 nominals |
+| `plate_footprint_tol_mm` | 0.5 | the 4.1.1.2 mid-side tolerance, not the 4.1.1.1 corner one. See below. |
+| `plate_corner_r_max_mm` | 4.78 | 4.1.2.1 is 3.18 +/- 1.6 mm. Use the maximum for a clearance feature. |
+| `plate_flange_h_mm`, `plate_flange_tol_mm` | 6.10, 0.38 | ANSI/SLAS 3-2004 4.2 medium. Five incompatible variants exist. |
 | `plate_height_mm` | 14.35 | ANSI/SLAS 2-2004, and **only** for a standard-height microplate |
 | `plate_cg_height_mm` | -1 | unmeasured sentinel; no SLAS standard gives plate mass |
-| `well_cols`, `well_rows`, `well_pitch_mm` | 12, 8, 9.0 | ANSI/SLAS 4-2004 §4.1 (96-well) |
+| `well_cols`, `well_rows`, `well_pitch_mm` | 12, 8, 9.0 | ANSI/SLAS 4-2004 4.1 (96-well) |
 
 Three of these are traps worth stating plainly:
 
-**There are two footprint tolerances, not one.** SLAS 1 §4.1.1.1 gives ± 0.25 mm, but only
-within 12.7 mm of the four outside corners. §4.1.1.2 gives ± 0.5 mm anywhere else along
+**There are two footprint tolerances, not one.** SLAS 1 4.1.1.1 gives +/- 0.25 mm, but only
+within 12.7 mm of the four outside corners. 4.1.1.2 gives +/- 0.5 mm anywhere else along
 the side. A conforming plate may bow outward by 0.5 mm at mid-side. A pocket cut to the
-commonly quoted ± 0.25 mm jams legal plates, in the middle, where it is not obvious why.
+commonly quoted +/- 0.25 mm jams legal plates, in the middle, where it is not obvious why.
 The model uses the loose figure.
 
 **The flange variant is a required input.** SLAS 3 offers five mutually exclusive variants
 (short 2.41, medium 6.10, tall 7.62, short-with-interruptions 2.41, dual 2.41/7.62 mm, all
-± 0.38) and requires a plate to declare which one it meets. "SBS compliant" on a vendor
++/- 0.38) and requires a plate to declare which one it meets. "SBS compliant" on a vendor
 page does not tell you. The retaining lip has to engage the flange and nothing above it,
 so this parameter sizes the lip. On a short-flange plate the default 3.0 mm lip is too
 tall and the render report says `FAIL`.
@@ -162,8 +162,8 @@ from the model.** The printed part is not the model:
 - Slicer defaults disagree with each other. OrcaSlicer ships `filament_shrink` of 99.95%
   for one vendor's PLA, 99.85% PETG, and 99.487% for ABS and ASA, while another vendor's
   profiles in the same repository ship 100% for all four. A 0.5% disagreement on ABS is
-  0.64 mm across 127.76 mm -- larger than the entire SLAS footprint tolerance.
-- Desktop FDM accuracy is quoted at about ± 0.5% with a ± 0.5 mm floor, and it scales with
+ 0.64 mm across 127.76 mm -- larger than the entire SLAS footprint tolerance.
+- Desktop FDM accuracy is quoted at about +/- 0.5% with a +/- 0.5 mm floor, and it scales with
   length. A good calibration cube proves nothing about a 129 mm pocket.
 - The first layers are the least trustworthy part of the print. PrusaSlicer's own profiles
   ship 0.2 mm of elephant-foot compensation for a 0.4 mm nozzle, and the bottom of this
@@ -223,7 +223,7 @@ The lip height has a window and both ends are real:
 
 `lip_window_ok()` checks the window and the report prints `PASS` or `FAIL` with the reason.
 
-Corner lips rather than continuous rails, for three reasons. SLAS 3 §4.4 permits a single
+Corner lips rather than continuous rails, for three reasons. SLAS 3 4.4 permits a single
 interruption on center of each long side; a continuous long-side rail can land on that
 interruption, but a corner lip cannot, because the interruption edges are at least 47.8 mm
 from the nearest part edge. The mid-side gaps are also where a gripper puts its jaws. And
@@ -242,7 +242,7 @@ want a number.
 `registration_style = "slas_skirt"` gives the fixture's own base an ANSI/SLAS-1 footprint
 skirt so it drops into the deck nest the way a plate does. This reuses location the deck
 already provides and needs one measurement (the nest depth) instead of a hole pattern. The
-skirt is continuous and uninterrupted around the base, as SLAS 1 §4.1.1.3 requires of a
+skirt is continuous and uninterrupted around the base, as SLAS 1 4.1.1.3 requires of a
 plate footprint, and for the same reason -- a gap snags a nest.
 
 The fixture body is wider than the skirt, so its shoulder sits above the nest rim. Only one
@@ -321,7 +321,7 @@ Material-dependent settings are marked. Everything else is geometry.
 | top / bottom layers | 5 or more | the seat is a functional surface |
 | infill | 15 to 25% gyroid | **do not model internal voids.** An enclosed cavity in a fixture that gets wiped cannot be dried. Let the slicer make the sparse structure so it drains and dries through the walls. |
 | elephant-foot compensation | as your profile normally uses | the registration skirt is on the first layers; if you disable it, the skirt is oversize |
-| brim | only if adhesion fails, and **remove it completely** | SLAS 1 §4.1.1.3 requires a continuous uninterrupted footprint. Brim and elephant-foot remnants on the skirt snag deck nests and gripper jaws. |
+| brim | only if adhesion fails, and **remove it completely** | SLAS 1 4.1.1.3 requires a continuous uninterrupted footprint. Brim and elephant-foot remnants on the skirt snag deck nests and gripper jaws. |
 | supports | see below | |
 | nozzle | steel, not brass | **material-adjacent.** Brass alloys commonly contain lead. Even for a non-contacting fixture this is the cheaper choice to make correctly. |
 
@@ -546,10 +546,10 @@ Dimensional standards, clause text read directly:
 - ANSI/SLAS 3-2004 (R2012) Microplates -- Bottom Outside Flange Dimensions
 - ANSI/SLAS 4-2004 (R2012) Microplates -- Well Positions
 - ANSI/SLAS 6-2012 Microplates -- Well Bottom Elevation (defines a test method and sets no
-  limits: §7 states explicitly that it is not the intent of the standard to state a limit)
+  limits: 7 states explicitly that it is not the intent of the standard to state a limit)
 
 All five are published by SLAS at `slas.org`. Dimensions in SLAS 1 through 4 apply at 20 C;
-SLAS 6's test method specifies 25 ± 2 C. Do not quote a single temperature for the family.
+SLAS 6's test method specifies 25 +/- 2 C. Do not quote a single temperature for the family.
 Before publishing anything that depends on these clauses, check the purchased ANSI copies.
 
 Porosity, cleanability, and material behavior:
