@@ -554,7 +554,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-283 device-free tests. The ones that matter most try to make the layer lie:
+351 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever

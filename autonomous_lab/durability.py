@@ -36,6 +36,15 @@ not even establish which state the instrument is in. This is the same convention
 `intelligence.trusted_for` applies to an unbenchmarked operation and `qc.evaluate` applies
 to an absent measurement.
 
+That ordering ranks verdicts and does not decide them, and one asymmetry falls out of it.
+LAPSED is a proof and UNKNOWN is the absence of one, so an unmeasured unit cannot cancel a
+lapse already proved on a unit that WAS counted -- it is reported alongside as an
+additional finding on the same obligation. The reverse does not hold at all: ENTITLED and
+EXPIRING are clearances, and nothing unmeasured supports a clearance. An interval charged
+in days and runs, five hundred days past due, against a lab that never counted runs, is
+lapsed on the evidence in hand, and reporting it merely UNKNOWN dropped the retrospective
+alarm this module calls the harder problem.
+
 AN INTERVAL CARRIES ITS BASIS. A vendor-stated service interval is real evidence and it is
 not evidence about THIS duty cycle, which is the identical distinction `qc.Basis` already
 draws about thresholds -- so this module reuses that enum rather than mirroring it. A
@@ -55,6 +64,7 @@ question a planner has to ask before a campaign rather than after it.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
@@ -175,7 +185,14 @@ class Interval:
 
   `restores` is prose and deliberately concrete, in the same discipline
   `provenance.CustodyGap.closes_it` applies: "improve maintenance" is not an action, "run
-  the two-point absorbance calibration and record both readings" is.
+  the two-point absorbance calibration and record both readings" is. It is required to say
+  something, because `untrusted_instruments` reports an instrument's remedies by
+  collecting this field, and a blank one produces a row that names an instrument untrusted
+  and names nothing that would fix it.
+
+  `instrument` is checked against the health record it is resolved through, not decoration.
+  See `InstrumentHealth.__post_init__`: the same fact stored in two places disagrees
+  eventually, and the disagreement here reports the wrong box entitled.
   """
 
   name: str
@@ -189,6 +206,14 @@ class Interval:
   rationale: str = ""
 
   def __post_init__(self) -> None:
+    if not self.restores.strip():
+      # An obligation that does not say what discharging it restores is an author-settable
+      # field that silences half the report: the instrument is still named untrusted and
+      # the work that would restore it is gone, which is the one thing the row was for.
+      raise ValueError(
+        f"interval '{self.name}' does not say what discharging it restores; an obligation "
+        "with no stated remedy is a note, not an obligation"
+      )
     declared = {
       Charge.DAYS: self.every_days,
       Charge.RUNS: self.every_runs,
@@ -203,7 +228,20 @@ class Interval:
         "not an obligation, it is a note"
       )
     for charge, value in declared.items():
-      if value is not None and value <= 0:
+      if value is None:
+        continue
+      if not math.isfinite(value):
+        # The same never-comes-due obligation written as a number. An infinite recurrence
+        # is never exhausted and never crossed, and a NaN one compares False against every
+        # test in this module, so both report entitled forever through the arithmetic
+        # instead of through the missing field the guard above catches. Checked before the
+        # sign test, which NaN passes.
+        raise ValueError(
+          f"interval '{self.name}' recurs every {value} {charge.value}, which is not a "
+          "quantity that ever arrives; an obligation that never comes due is not an "
+          "obligation, however it is spelled"
+        )
+      if value <= 0:
         raise ValueError(
           f"interval '{self.name}' recurs every {value} {charge.value}, which is already past due "
           "the moment it is discharged"
@@ -248,6 +286,15 @@ class Accrued:
   entitlement to an instrument nobody has been watching, which is the failure this module
   exists to prevent.
 
+  None is the only sentinel for uncounted, and NaN is refused rather than accepted as a
+  second one. That refusal is the whole promise above, held against the way the number
+  actually arrives: a blank maintenance cell round-tripped through a spreadsheet, a CSV,
+  or a JSON reader comes back as NaN, which is precisely the "nobody counted it" case this
+  module exists for. NaN compares False against every threshold here, so accepting it
+  reports a full budget and an entitled instrument over a cell nobody filled in. Refusing
+  at the door tells the loader what to do -- an unfilled cell has to arrive as None --
+  rather than guessing which of the two it meant.
+
   Structurally identical to `Campaign` and kept separate anyway, because one is a count of
   the past and the other is a claim about the future, and a function that accepts either
   where it meant one will eventually be handed the wrong one.
@@ -256,6 +303,25 @@ class Accrued:
   days: Optional[float] = None
   runs: Optional[float] = None
   hours: Optional[float] = None
+
+  def __post_init__(self) -> None:
+    for charge in Charge:
+      value = self.charged(charge)
+      if value is None:
+        continue
+      if not math.isfinite(value):
+        raise ValueError(
+          f"{value} {charge.value} accrued is not a count. A blank maintenance cell "
+          "round-tripped through a spreadsheet arrives as NaN and means UNCOUNTED, so it "
+          "has to arrive as None; read as a measurement it restores entitlement to an "
+          "instrument nobody was watching"
+        )
+      if value < 0:
+        raise ValueError(
+          f"{value} {charge.value} accrued since this obligation was discharged; an "
+          "instrument cannot have done negative work since it was serviced, and a "
+          "negative accrual mints budget that was never earned"
+        )
 
   def charged(self, charge: Charge) -> Optional[float]:
     if charge is Charge.DAYS:
@@ -297,11 +363,31 @@ class Campaign:
   ninety days charges ninety days against the calibration of every instrument in it,
   including the ones it never touches, and a plan that counts only its own plates will
   miss the boundary that catches it.
+
+  Zero is the default and it means no work declared in that unit, which is why the
+  all-zero campaign is refused where it is used rather than where it is built -- see
+  `_refuse_empty_campaign`. Negative and non-finite quantities are refused here, at the
+  door: a plan of minus five runs is not empty, so it survives that refusal, and it can
+  never cross a boundary because it consumes budget instead of spending it.
   """
 
   runs: float = 0.0
   hours: float = 0.0
   days: float = 0.0
+
+  def __post_init__(self) -> None:
+    for charge in Charge:
+      value = self.charged(charge)
+      if not math.isfinite(value):
+        raise ValueError(
+          f"a campaign of {value} {charge.value} is not a plan; a quantity that compares "
+          "False against every boundary in this module clears every one of them"
+        )
+      if value < 0:
+        raise ValueError(
+          f"a campaign of {value} {charge.value} is not a plan; planned work is what will "
+          "be charged against an instrument's budget, and nothing gives budget back"
+        )
 
   def charged(self, charge: Charge) -> float:
     if charge is Charge.DAYS:
@@ -343,12 +429,25 @@ class Remaining:
         return v
     return None
 
+  @staticmethod
+  def _spent(left: float) -> bool:
+    """The boundary convention, written once because two copies of it drift apart.
+
+    A budget of exactly zero is spent, not nearly spent. `exhausted` asks this of the
+    present and `crossed_by` asks it of the state the plan ends in, and while the two were
+    written separately they disagreed: a campaign consuming exactly the remaining budget
+    was reported clear, and the state that same campaign produces is one this module calls
+    lapsed. The last plate of a "clear" campaign was run by an instrument this module
+    would not vouch for.
+    """
+    return left <= 0
+
   def exhausted(self) -> Tuple[Charge, ...]:
     """Units whose budget is spent. A budget of exactly zero is spent, not nearly spent."""
-    return tuple(c for c, v in self.left if v <= 0)
+    return tuple(c for c, v in self.left if self._spent(v))
 
   def crossed_by(self, campaign: Campaign) -> Tuple[Charge, ...]:
-    """Units where the planned work consumes more than is left.
+    """Units where the planned work ends on or past the boundary.
 
     Excludes units already exhausted. Those are a lapse, which is a different finding with
     a different fix, and folding them in here would let a report about a plan absorb a
@@ -356,7 +455,7 @@ class Remaining:
     """
     out: List[Charge] = []
     for c, v in self.left:
-      if v > 0 and campaign.charged(c) > v:
+      if not self._spent(v) and self._spent(v - campaign.charged(c)):
         out.append(c)
     return tuple(out)
 
@@ -369,6 +468,14 @@ class Standing:
   lapse is restored by performing the obligation, an unrecorded one by performing it AND
   recording it, and a crossing by discharging the obligation before the campaign starts
   rather than during it.
+
+  `partial` names the units nobody counted on an obligation where other units WERE
+  counted, which is a different state from an obligation nobody counted at all and used to
+  be reported as the same one. It qualifies a finding and never suppresses it: an interval
+  charged in days and runs, past due on days, against a lab that never counted runs, is
+  lapsed on the evidence it has -- and reporting that UNKNOWN because of the second unit
+  dropped the row out of `lapsed()` and `invalidating()` and took the retrospective alarm
+  with it.
   """
 
   instrument: str
@@ -378,6 +485,7 @@ class Standing:
   reason: str
   restores: str
   crossing: Tuple[Charge, ...] = ()
+  partial: Tuple[Charge, ...] = ()
 
   @property
   def trustworthy(self) -> bool:
@@ -405,6 +513,26 @@ def _remaining(interval: Interval, record: Optional[ServiceRecord]) -> Remaining
   )
 
 
+def _refuse_empty_campaign(campaign: Optional[Campaign]) -> None:
+  """The empty-campaign refusal, called from every door that accepts a plan.
+
+  It lived on `crosses_boundary` alone, which is a guard on one of four entry points and
+  therefore a guard on none: the same empty Campaign passed through `standing`,
+  `InstrumentHealth.entitlement`, `entitlement_summary` and `untrusted_instruments` and
+  cleared every crossing check in all four, because zero planned work crosses nothing. A
+  planner who forgot to fill the campaign in got a workcell-wide clean bill.
+
+  `campaign=None` is the no-plan case and stays legal. It is a different claim from a
+  campaign of zero: one asks what the instrument is entitled to today, the other asks
+  whether a plan fits, and the plan is missing.
+  """
+  if campaign is not None and campaign.empty:
+    raise ValueError(
+      "a campaign that plans no runs, hours, or days crosses nothing; state the planned "
+      "work before asking whether it fits inside the instrument's entitlement"
+    )
+
+
 def standing(
   health: "InstrumentHealth",
   interval: Interval,
@@ -416,7 +544,23 @@ def standing(
   record is UNKNOWN before anything else is considered, because there is no baseline to
   subtract from; an obligation whose record is only ASSERTED is UNKNOWN for the same
   reason `provenance` refuses to call a command log a record of events.
+
+  A proved lapse is checked BEFORE an uncounted unit, and the asymmetry is deliberate.
+  LAPSED is a proof and UNKNOWN is the absence of one, so an unmeasured second unit cannot
+  make a past-due first unit less past due -- it is reported alongside, in `partial`. The
+  reverse does not hold: ENTITLED and EXPIRING are clearances, and an uncounted unit
+  cannot support a clearance, so those two stay behind the uncounted check.
   """
+  _refuse_empty_campaign(campaign)
+  if interval.instrument != health.instrument:
+    # The obligation and the health record each name an instrument, and nothing used to
+    # compare them. Resolving one box's paperwork against another's service history
+    # returns a verdict about neither, and it returns it as a PASS rather than as a gap.
+    raise ValueError(
+      f"obligation '{interval.name}' belongs to '{interval.instrument}' and is being "
+      f"resolved against the service history of '{health.instrument}'; one box's "
+      "paperwork does not entitle another"
+    )
   record = health.record_for(interval.name)
   remaining = _remaining(interval, record)
 
@@ -436,6 +580,26 @@ def standing(
       ),
     )
 
+  clash = health.contradictions(interval.name)
+  if clash:
+    moments = ", ".join(sorted({r.performed for r in clash}))
+    return Standing(
+      instrument=health.instrument,
+      interval=interval,
+      entitlement=Entitlement.UNKNOWN,
+      remaining=remaining,
+      reason=(
+        f"{len(clash)} records claim '{interval.name}' was discharged on {moments} and "
+        "disagree about what has accrued since. Which one governs is decided by which row "
+        "was appended last, so the same facts return entitled or lapsed by declaration "
+        "order; an instrument with two incompatible histories is unmeasured"
+      ),
+      restores=(
+        f"withdraw or correct the duplicate records of '{interval.name}' on {moments} so "
+        "one discharge is claimed once, with the accrual somebody actually counted"
+      ),
+    )
+
   if not record.attestation.is_evidence:
     return Standing(
       instrument=health.instrument,
@@ -452,23 +616,6 @@ def standing(
       ),
     )
 
-  if remaining.uncounted:
-    units = ", ".join(c.value for c in remaining.uncounted)
-    return Standing(
-      instrument=health.instrument,
-      interval=interval,
-      entitlement=Entitlement.UNKNOWN,
-      remaining=remaining,
-      reason=(
-        f"'{interval.name}' is charged in {units}, and nobody counted {units} since it was "
-        f"last discharged on {record.performed}. There is no budget to state"
-      ),
-      restores=(
-        f"count {units} against this instrument from now on; until then the interval is a "
-        "policy nobody is measuring against"
-      ),
-    )
-
   spent = remaining.exhausted()
   if spent:
     units = ", ".join(f"{c.value} ({remaining.value(c)} left)" for c in spent)
@@ -478,13 +625,56 @@ def standing(
       if interval.kind.invalidates_past_results
       else ""
     )
+    # The uncounted units qualify this finding and do not replace it. Reporting UNKNOWN
+    # here because a second unit went uncounted erased a lapse the arithmetic had already
+    # proved: the row left `lapsed()` and `invalidating()`, the retrospective alarm went
+    # quiet, and the lab was told to start a counter instead of being told that months of
+    # results are unattributable.
+    unmeasured = ""
+    also = ""
+    if remaining.uncounted:
+      names = ", ".join(c.value for c in remaining.uncounted)
+      unmeasured = (
+        f" Nobody counted {names} since, so this obligation is past due on what was "
+        "counted and unmeasured on the rest, which can only make it worse."
+      )
+      also = f", and count {names} against this instrument from now on"
     return Standing(
       instrument=health.instrument,
       interval=interval,
       entitlement=Entitlement.LAPSED,
       remaining=remaining,
-      reason=f"'{interval.name}' is past due on {units}.{past}",
-      restores=interval.restores,
+      reason=f"'{interval.name}' is past due on {units}.{past}{unmeasured}",
+      restores=f"{interval.restores}{also}",
+      partial=remaining.uncounted,
+    )
+
+  if remaining.uncounted:
+    units = ", ".join(c.value for c in remaining.uncounted)
+    # Never claim there is no budget while `remaining.left` holds one. What cannot be
+    # stated is the budget for the interval, because it comes due on whichever unit
+    # arrives first and one of those units is unmeasured.
+    stated = ", ".join(f"{v} {c.value}" for c, v in remaining.left)
+    budget = (
+      f" {stated} remain on the units that were counted, and the obligation comes due on "
+      "whichever unit arrives first, so that is not this interval's budget"
+      if remaining.left
+      else " There is no budget to state"
+    )
+    return Standing(
+      instrument=health.instrument,
+      interval=interval,
+      entitlement=Entitlement.UNKNOWN,
+      remaining=remaining,
+      reason=(
+        f"'{interval.name}' is charged in {units}, and nobody counted {units} since it was "
+        f"last discharged on {record.performed}.{budget}"
+      ),
+      restores=(
+        f"count {units} against this instrument from now on; until then the interval is a "
+        "policy nobody is measuring against"
+      ),
+      partial=remaining.uncounted if remaining.left else (),
     )
 
   if campaign is not None:
@@ -533,14 +723,43 @@ class InstrumentHealth:
 
   An instrument with no declared obligations is UNKNOWN rather than entitled. Declaring
   none is not the same as having none, and treating an empty obligation list as a clean
-  bill of health is exactly the vacuous pass a gate evaluated against an empty measurement
-  dict gives.
+  bill of health is exactly the vacuous pass `qc.evaluate` gives a gate that declares no
+  criteria -- which `qc.readiness` refuses and `qc.evaluate` does not. The analogue is the
+  empty CRITERIA tuple and deliberately not the empty measurement dict: `qc.evaluate`
+  handles that one correctly, and citing the case a sibling gets right as the precedent
+  for a case it gets wrong is the kind of claim this package's own data contradicts.
+
+  `instrument` is the owning key, and every obligation filed here has to agree with it.
+  The name is stored in two places -- here and on `Interval` -- and two stored copies of
+  one fact eventually disagree, so the disagreement is refused at construction rather than
+  discovered later as an instrument reporting entitled on another box's paperwork.
   """
 
   instrument: str
   obligations: Tuple[Interval, ...] = ()
   records: Tuple[ServiceRecord, ...] = ()
   note: str = ""
+
+  def __post_init__(self) -> None:
+    seen: List[str] = []
+    for iv in self.obligations:
+      if iv.instrument != self.instrument:
+        raise ValueError(
+          f"obligation '{iv.name}' declares instrument '{iv.instrument}' and is filed "
+          f"under '{self.instrument}'; a maintenance plan for one box does not entitle "
+          "another, and the misfiling reports a pass rather than a gap"
+        )
+      if iv.name in seen:
+        # A service record names the interval it discharged and nothing else. Two
+        # obligations sharing a name are therefore discharged by one signature, so a
+        # calibration and a qualification that were never both performed both read as
+        # done. 'annual_calibration', 'pm' and 'tip_change' are exactly the names a real
+        # lab reuses.
+        raise ValueError(
+          f"'{iv.name}' is declared twice on {self.instrument}; two obligations sharing a "
+          "name are discharged by one record, for work that was performed once"
+        )
+      seen.append(iv.name)
 
   @classmethod
   def unrecorded(cls, instrument: str) -> "InstrumentHealth":
@@ -553,11 +772,17 @@ class InstrumentHealth:
       ),
     )
 
+  def records_for(self, interval_name: str) -> Tuple[ServiceRecord, ...]:
+    """Every record filed against one obligation, in the order the caller declared them."""
+    return tuple(r for r in self.records if r.interval == interval_name)
+
   def record_for(self, interval_name: str) -> Optional[ServiceRecord]:
     """The most recent record for an obligation, taking the last declared as most recent.
 
     Order is the caller's, not a sort. Sorting would need dates parsed out of `performed`,
-    and this module does no date arithmetic on purpose.
+    and this module does no date arithmetic on purpose. Records of separate discharges are
+    a service history and the later supersedes; records of the SAME discharge that
+    disagree are not a history, and `contradictions` catches those before this is read.
     """
     found: Optional[ServiceRecord] = None
     for rec in self.records:
@@ -565,7 +790,30 @@ class InstrumentHealth:
         found = rec
     return found
 
+  def contradictions(self, interval_name: str) -> Tuple[ServiceRecord, ...]:
+    """Records that claim the SAME discharge of an obligation and disagree about it.
+
+    Two records performed at different moments are a history, and taking the last is what
+    `record_for` is for. Two records claiming one discharge with different accruals or
+    different attestations are a contradiction, and resolving it by tuple position decides
+    the verdict by declaration order: the same instrument reads entitled or lapsed
+    depending on which row was appended last, so appending a flattering one buries a
+    lapse. Reported rather than resolved -- an instrument with two incompatible histories
+    is unmeasured, which this module already ranks below overdue.
+    """
+    by_moment: Dict[str, List[ServiceRecord]] = {}
+    for rec in self.records_for(interval_name):
+      by_moment.setdefault(rec.performed, []).append(rec)
+    out: List[ServiceRecord] = []
+    for group in by_moment.values():
+      # `since` and `attestation` are the two fields a verdict is computed from. Two
+      # technicians signing one job is not a contradiction about the budget.
+      if len({(r.since, r.attestation) for r in group}) > 1:
+        out.extend(group)
+    return tuple(out)
+
   def standings(self, campaign: Optional[Campaign] = None) -> Tuple[Standing, ...]:
+    _refuse_empty_campaign(campaign)
     return tuple(standing(self, i, campaign) for i in self.obligations)
 
   def entitlement(self, campaign: Optional[Campaign] = None) -> Entitlement:
@@ -575,6 +823,9 @@ class InstrumentHealth:
     that fails safe: a new instrument arrives untrusted and has to earn its way out,
     rather than arriving perfect because nobody has written its maintenance plan yet.
     """
+    # Before the short circuit below, so an instrument with no obligations does not become
+    # the one door where an empty campaign still gets an answer.
+    _refuse_empty_campaign(campaign)
     if not self.obligations:
       return Entitlement.UNKNOWN
     worst = Entitlement.ENTITLED
@@ -587,8 +838,22 @@ class InstrumentHealth:
     return tuple(r for r in self.standings() if r.entitlement is Entitlement.LAPSED)
 
   def unrecorded_obligations(self) -> Tuple[Standing, ...]:
-    """Obligations this lab cannot say anything about, for any of the three reasons."""
+    """Obligations this lab cannot say anything about, for any of the reasons."""
     return tuple(r for r in self.standings() if r.entitlement is Entitlement.UNKNOWN)
+
+  def partially_counted(self) -> Tuple[Standing, ...]:
+    """Obligations resolved on some units while others went uncounted.
+
+    Reported separately because the verdict on such a row rests on part of the evidence.
+    A lapse proved on the counted unit stands, and the uncounted unit is still an
+    unmeasured dimension on the same instrument -- two findings on one obligation, and
+    collapsing them to either one loses work.
+    """
+    return tuple(r for r in self.standings() if r.partial)
+
+  def conflicting(self) -> Tuple[Standing, ...]:
+    """Obligations whose records contradict each other rather than accumulate."""
+    return tuple(r for r in self.standings() if self.contradictions(r.interval.name))
 
   def unvalidated(self) -> Tuple[Interval, ...]:
     """Obligations whose recurrence this lab has not confirmed against its own duty cycle.
@@ -636,8 +901,15 @@ class BoundaryReport:
     Reported alongside real crossings rather than under them. An uncounted budget is not a
     small risk, it is an unavailable answer, and a campaign planned over one is planned
     over nothing.
+
+    Includes rows whose verdict came from the units that WERE counted. A lapse proved on
+    one unit belongs in `lapsed()`, and the unit nobody counted on that same obligation is
+    still an unavailable answer -- one row appears in both lists because it is two
+    findings.
     """
-    return tuple(r for r in self.rows if r.entitlement is Entitlement.UNKNOWN)
+    return tuple(
+      r for r in self.rows if r.entitlement is Entitlement.UNKNOWN or r.partial
+    )
 
   @property
   def clear(self) -> bool:
@@ -681,13 +953,11 @@ def crosses_boundary(
 
   A campaign that plans no work is refused rather than reported clear. Asking whether zero
   plates cross a boundary is a question about nothing, and returning a clean report to it
-  would be the emptiest kind of pass this package refuses.
+  would be the emptiest kind of pass this package refuses. The refusal itself lives in
+  `_refuse_empty_campaign` and every entry point that accepts a plan calls it, because
+  while it lived here the other three answered the same empty campaign with a clean bill.
   """
-  if campaign.empty:
-    raise ValueError(
-      "a campaign that plans no runs, hours, or days crosses nothing; state the planned "
-      "work before asking whether it fits inside the instrument's entitlement"
-    )
+  _refuse_empty_campaign(campaign)
   return BoundaryReport(
     instrument=health.instrument,
     campaign=campaign,
@@ -714,6 +984,37 @@ class Untrusted:
   restores: Tuple[str, ...]
 
 
+def _instrument_keys(workcell) -> List[str]:
+  """Every box this report is answerable for: present, plus federated, in that order."""
+  keys: List[str] = list(workcell.present_keys())
+  for key in workcell.federated:
+    if key not in keys:
+      keys.append(key)
+  return keys
+
+
+def _health_at(key: str, supplied: Dict[str, InstrumentHealth]) -> InstrumentHealth:
+  """The health record for one instrument, refusing one filed under another's key.
+
+  A missing record resolves to `unrecorded`: an instrument nobody wrote down is the case
+  this module exists for, and it reports UNKNOWN. A record filed under the wrong key is a
+  different thing entirely -- it is a record of some other box, and honoring it reports
+  this one entitled on service it never had. One record filed under nine keys reported a
+  whole workcell entitled and left nothing untrusted, off one calibration performed once
+  on one instrument.
+  """
+  h = supplied.get(key)
+  if h is None:
+    return health_for(key)
+  if h.instrument != key:
+    raise ValueError(
+      f"health record for '{h.instrument}' is filed under '{key}'; a service history "
+      "belongs to the box the work was performed on, and crediting it to another reports "
+      "an instrument entitled on paperwork that is not its own"
+    )
+  return h
+
+
 def untrusted_instruments(
   workcell,
   health: Optional[Dict[str, InstrumentHealth]] = None,
@@ -731,16 +1032,35 @@ def untrusted_instruments(
   A missing health record is not a missing row. It resolves to `InstrumentHealth.unrecorded`
   and reports UNKNOWN, in the same way `throughput.duration_for` resolves an untimed op to
   UNKNOWN rather than to zero.
+
+  A workcell that declares no instrument returns a row rather than an empty list. The
+  natural call shape is `if not untrusted_instruments(wc)`, which reads an empty list as a
+  lab where every instrument is entitled -- the same `all()`-over-nothing that
+  `BoundaryReport.clear` refuses. Emptiness is the finding here, not the absence of one.
   """
   supplied = health or {}
-  keys: List[str] = list(workcell.present_keys())
-  for key in workcell.federated:
-    if key not in keys:
-      keys.append(key)
+  _refuse_empty_campaign(campaign)
+  keys = _instrument_keys(workcell)
+  if not keys:
+    return [
+      Untrusted(
+        instrument=workcell.name,
+        entitlement=Entitlement.UNKNOWN,
+        reason=(
+          f"workcell '{workcell.name}' declares no present or federated instrument, so "
+          "this report covers nothing; a lab with no boxes in it has not been shown to "
+          "have no boxes out of service"
+        ),
+        restores=(
+          "declare the instruments this workcell actually contains, then this report can "
+          "say something about them",
+        ),
+      )
+    ]
 
   out: List[Untrusted] = []
   for key in keys:
-    h = supplied.get(key) or health_for(key)
+    h = _health_at(key, supplied)
     verdict = h.entitlement(campaign)
     if verdict.trustworthy:
       continue
@@ -777,16 +1097,26 @@ def entitlement_summary(
   health: Optional[Dict[str, InstrumentHealth]] = None,
   campaign: Optional[Campaign] = None,
 ) -> Dict[str, int]:
-  """Counts for the report. Every instrument in the workcell is in exactly one bucket."""
+  """Counts for the report. Every instrument in the workcell is in exactly one bucket.
+
+  Refuses a workcell with nothing in it. Zero in every bucket and a total of zero is
+  arithmetic over no instruments, and it reads exactly like a lab with nothing wrong --
+  which is the shape of vacuous pass this package hunts, arriving as a summary instead of
+  as a check.
+  """
   supplied = health or {}
-  keys: List[str] = list(workcell.present_keys())
-  for key in workcell.federated:
-    if key not in keys:
-      keys.append(key)
+  _refuse_empty_campaign(campaign)
+  keys = _instrument_keys(workcell)
+  if not keys:
+    raise ValueError(
+      f"workcell '{workcell.name}' declares no present or federated instrument; counts of "
+      "zero over zero instruments read as a lab with nothing out of service, so declare "
+      "the instruments before summarizing them"
+    )
   counts = {e.value: 0 for e in Entitlement}
   counts["total"] = len(keys)
   for key in keys:
-    h = supplied.get(key) or health_for(key)
+    h = _health_at(key, supplied)
     counts[h.entitlement(campaign).value] += 1
   return counts
 
@@ -892,9 +1222,14 @@ NOT_COMPUTED: Tuple[Refusal, ...] = (
     ),
     what_it_would_take=(
       "measured per-instrument reliability on this duty cycle AND a characterized "
-      "correlation structure between instruments, which no published autonomous-lab work "
-      "reports"
+      "correlation structure between the instruments, established on this bench or taken "
+      "from work that states the bench and duty cycle it was established on"
     ),
+    # The earlier wording claimed no published autonomous-lab work reports such a
+    # structure. That is a universal negative over a literature, carried in a string with
+    # no citation, inside a module whose argument is that an unsourced number becomes a
+    # specification. It is also unnecessary: naming what the figure would require is the
+    # refusal, and a claim about what a field has not shown is checkable nowhere here.
   ),
 )
 

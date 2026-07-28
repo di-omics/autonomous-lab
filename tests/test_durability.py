@@ -10,6 +10,15 @@ could vouch for, and the run record is impeccable about everything except that.
 The fifth test hunts the number. This module must not return a predicted failure rate under
 any name, because a reliability figure invented here would become a specification nobody
 measured.
+
+The later tests hunt the same four ways in through the doors an audit found open. A NaN in
+a maintenance cell is the fifth way to arrive at "nobody counted it", and it used to be
+read as a measurement. An obligation that recurs every inf days is the obligation that
+recurs on nothing, spelled as a number. A campaign that lands exactly on a boundary was
+cleared by a report whose own arithmetic calls the state it ends in lapsed. An uncounted
+second unit erased a lapse the module had already proved. One service record filed under
+nine keys entitled a workcell. And a guard installed at one of four entry points is a
+guard at none, which is why the empty campaign is now checked at every door in one test.
 """
 
 from __future__ import annotations
@@ -162,6 +171,35 @@ def test_an_uncounted_unit_is_not_read_as_zero():
   assert untracked.entitlement() is Entitlement.UNKNOWN
 
 
+def test_a_nan_accrual_is_refused_rather_than_read_as_a_measurement():
+  """The other missing-number sentinel, and the one a real loader produces.
+
+  None is the module's uncounted marker and a blank maintenance cell round-tripped through
+  a spreadsheet or a JSON reader comes back as NaN, which is the same fact wearing a
+  different type. NaN compares False against every threshold in this module, so reading it
+  as a count reported a full budget, an ENTITLED instrument, and a clear campaign over a
+  cell nobody filled in -- absent data yielding a pass, in one call.
+  """
+  for kwargs in ({"runs": float("nan")}, {"days": float("nan")}, {"hours": float("nan")}):
+    with pytest.raises(ValueError, match="means UNCOUNTED"):
+      Accrued(**kwargs)
+  with pytest.raises(ValueError, match="means UNCOUNTED"):
+    Accrued(runs=float("inf"))
+  assert Accrued(runs=None).charged(Charge.RUNS) is None, "None remains the way to say uncounted"
+
+
+def test_a_negative_accrual_cannot_mint_budget_that_was_never_earned():
+  """An instrument cannot have run minus nine hundred plates since it was serviced.
+
+  Accepted, it added to the remaining budget: a hundred-run calibration reported a
+  thousand runs left and cleared a five-hundred-run campaign.
+  """
+  with pytest.raises(ValueError, match="negative work"):
+    Accrued(runs=-900.0)
+  with pytest.raises(ValueError, match="negative work"):
+    Accrued(days=-1.0)
+
+
 # -- lapse ----------------------------------------------------------------------
 
 
@@ -191,6 +229,50 @@ def test_calendar_time_lapses_an_instrument_that_did_no_work():
   interval = _calibration(every_days=365.0, every_runs=None)
   idle = _health(interval, since=Accrued(days=400.0, runs=0.0))
   assert idle.entitlement() is Entitlement.LAPSED
+
+
+def test_a_proved_lapse_survives_an_uncounted_second_unit():
+  """An uncounted unit must not erase a lapse the module has already proved.
+
+  Checking `uncounted` before `exhausted` turned a definitively past-due calibration into
+  UNKNOWN the moment a second charge unit was added to the same interval, and the row left
+  `lapsed()`, `invalidating()`, and the boundary report with it. The lab was told to start
+  a counter; it was not told that five hundred days of results are unattributable.
+  """
+  interval = _calibration(name="cal_days", every_days=365.0, every_runs=500.0)
+  health = _health(interval, since=Accrued(days=900.0))  # days counted, runs never
+
+  assert health.entitlement() is Entitlement.LAPSED
+  assert len(health.lapsed()) == 1
+  assert len(health.invalidating()) == 1, "the retrospective alarm must not go quiet"
+  row = health.lapsed()[0]
+  assert row.remaining.exhausted() == (Charge.DAYS,)
+  assert row.partial == (Charge.RUNS,), "the uncounted unit qualifies the finding, not the verdict"
+  assert "unattributable" in row.reason
+  assert "There is no budget to state" not in row.reason
+  assert interval.restores in row.restores and "count runs" in row.restores
+
+  report = crosses_boundary(health, Campaign(days=90))
+  assert report.lapsed(), "the lapse reaches the campaign report too"
+  assert report.uncertain(), "and the unit nobody counted is still an unavailable answer"
+  assert not report.clear
+  assert health.partially_counted() == (row,)
+
+
+def test_a_reason_never_denies_a_budget_the_same_object_states():
+  """Prose the module's own data contradicts is a claim, not a finding.
+
+  An interval charged in two units with one of them counted has a stated remaining budget
+  on that unit, and the report said "There is no budget to state" beside it.
+  """
+  interval = _calibration(every_runs=100.0, every_days=365.0)
+  health = _health(interval, since=Accrued(days=65.0))  # days counted, runs not
+  row = standing(health, interval)
+  assert row.entitlement is Entitlement.UNKNOWN, "an uncounted unit still blocks a clearance"
+  assert row.remaining.value(Charge.DAYS) == 300.0
+  assert "300.0 days" in row.reason
+  assert "There is no budget to state" not in row.reason
+  assert row.partial == (Charge.RUNS,)
 
 
 def test_a_calibration_lapse_reaches_backwards_and_a_tip_box_does_not():
@@ -240,6 +322,76 @@ def test_a_campaign_inside_the_remaining_budget_is_clear():
   report = crosses_boundary(health, Campaign(runs=39))
   assert report.clear
   assert report.crossings() == ()
+
+
+def test_a_campaign_that_lands_exactly_on_the_boundary_crosses_it():
+  """The two boundary rules on `Remaining` have to be one rule, and the module says which.
+
+  `exhausted()` calls a budget of exactly zero spent, not nearly spent. `crossed_by` used
+  a strict comparison, so a campaign consuming exactly the remaining budget was reported
+  clear -- and the state that campaign produces is one this same module calls LAPSED. The
+  last plate of the "clear" campaign is run by an instrument the report will not vouch
+  for. The existing tests straddle this case at 39 and 120 against 40 remaining.
+  """
+  interval = _calibration(every_runs=100.0)
+  health = _health(interval, since=Accrued(runs=60.0))  # 40 left
+
+  assert crosses_boundary(health, Campaign(runs=39)).clear, "one short of the boundary fits"
+  report = crosses_boundary(health, Campaign(runs=40))
+  assert not report.clear
+  assert len(report.crossings()) == 1
+  assert report.crossings()[0].entitlement is Entitlement.EXPIRING
+  assert report.crossings()[0].crossing == (Charge.RUNS,)
+
+  ends_at = _health(interval, since=Accrued(runs=100.0))
+  assert ends_at.entitlement() is Entitlement.LAPSED, "the state the cleared campaign ends in"
+
+
+def test_an_empty_campaign_is_refused_at_every_door_that_accepts_one():
+  """A guard on one of four entry points is a guard on none.
+
+  The refusal lived on `crosses_boundary`, and the same empty Campaign passed through
+  `standing`, `entitlement`, `entitlement_summary` and `untrusted_instruments`, clearing
+  every crossing check because zero planned work crosses nothing. A planner who forgot to
+  fill the campaign in got a workcell-wide clean bill from three of the four doors.
+  """
+  interval = _calibration()
+  health = _health(interval, since=Accrued(runs=1.0))
+  wc = Workcell.default()
+  key = wc.present_keys()[0]
+  supplied = {key: _health(_calibration(instrument=key), since=Accrued(runs=1.0))}
+
+  doors = (
+    lambda: standing(health, interval, Campaign()),
+    lambda: health.standings(Campaign()),
+    lambda: health.entitlement(Campaign()),
+    lambda: crosses_boundary(health, Campaign()),
+    lambda: entitlement_summary(wc, supplied, Campaign()),
+    lambda: untrusted_instruments(wc, supplied, Campaign()),
+    # The instrument with no obligations short-circuits before its standings are built,
+    # so it is the one door an empty campaign could still walk through.
+    lambda: InstrumentHealth(instrument="star").entitlement(Campaign()),
+  )
+  for door in doors:
+    with pytest.raises(ValueError, match="crosses nothing"):
+      door()
+
+  assert health.entitlement() is Entitlement.ENTITLED, "no plan at all is a different question"
+
+
+def test_a_campaign_of_negative_or_undefined_work_is_refused():
+  """A campaign of minus five runs is not empty, so it survived the empty-campaign refusal.
+
+  It also crosses nothing, ever, because it gives budget back -- and NaN clears every
+  boundary in the module for the same reason a NaN interval never comes due.
+  """
+  for kwargs in ({"runs": -5.0}, {"days": -1.0}, {"hours": -0.5}):
+    with pytest.raises(ValueError, match="is not a plan"):
+      Campaign(**kwargs)
+  with pytest.raises(ValueError, match="is not a plan"):
+    Campaign(runs=float("nan"))
+  with pytest.raises(ValueError, match="is not a plan"):
+    Campaign(days=float("inf"))
 
 
 def test_expiring_is_a_deadline_rather_than_a_defect():
@@ -327,6 +479,140 @@ def test_an_interval_that_recurs_on_nothing_is_refused():
 def test_a_nonpositive_interval_is_refused():
   with pytest.raises(ValueError, match="already past due"):
     _calibration(every_runs=0.0)
+
+
+def test_an_interval_that_recurs_on_a_number_that_never_arrives_is_refused():
+  """The same never-comes-due obligation, written as a number instead of a missing field.
+
+  The guard above refuses an interval that recurs on no unit and names the reason: an
+  obligation that never comes due is the vacuous pass this package hunts, arriving through
+  a data table. `every_days=inf` is that obligation, and `<= 0` is False for both inf and
+  NaN, so both walked past a guard written for exactly them.
+  """
+  for kwargs in (
+    {"every_runs": float("inf")},
+    {"every_runs": float("nan")},
+    {"every_days": float("inf"), "every_runs": None},
+    {"every_hours": float("nan"), "every_runs": None},
+  ):
+    with pytest.raises(ValueError, match="never comes due"):
+      _calibration(**kwargs)
+
+
+def test_an_obligation_that_names_no_remedy_is_refused():
+  """An author-settable field that silences half the report.
+
+  `untrusted_instruments` collects remedies by filtering out empty strings, so a blank
+  `restores` produces an instrument named untrusted with nothing named that would fix it.
+  The repo's own guard cannot catch it today: with OBLIGATIONS empty, every row takes the
+  no-obligations branch whose remedy is a hardcoded literal, so the assertion is satisfied
+  over a path nothing exercises.
+  """
+  with pytest.raises(ValueError, match="does not say what discharging it restores"):
+    _calibration(restores="")
+  with pytest.raises(ValueError, match="does not say what discharging it restores"):
+    _calibration(restores="   ")
+
+  wc = Workcell.default()
+  key = wc.present_keys()[0]
+  interval = _calibration(instrument=key, every_runs=10.0)
+  rows = untrusted_instruments(wc, {key: _health(interval, since=Accrued(runs=999.0))})
+  row = [r for r in rows if r.instrument == key][0]
+  assert row.entitlement is Entitlement.LAPSED
+  assert row.restores == (interval.restores,), "a lapse from a declared obligation names its fix"
+
+
+# -- which record discharges which obligation, on which box --------------------
+
+
+def test_two_records_of_one_discharge_do_not_resolve_by_tuple_order():
+  """The same facts must not return opposite verdicts depending on declaration order.
+
+  `record_for` takes the last match as most recent, which is right for a service history
+  and wrong for two rows claiming the SAME discharge with incompatible counts. Resolved by
+  position, appending a flattering row was enough to bury a lapse.
+  """
+  interval = _calibration(every_runs=100.0)
+  overdue = _serviced(interval, Accrued(runs=400.0))
+  fresh = _serviced(interval, Accrued(runs=1.0))
+  kwargs = dict(instrument=interval.instrument, obligations=(interval,))
+
+  first = InstrumentHealth(records=(overdue, fresh), **kwargs)
+  second = InstrumentHealth(records=(fresh, overdue), **kwargs)
+  assert first.entitlement() is second.entitlement(), "tuple order must not decide the verdict"
+  assert first.entitlement() is Entitlement.UNKNOWN, "two incompatible histories are unmeasured"
+  assert first.conflicting() and second.conflicting()
+  assert "disagree" in first.standings()[0].reason
+  assert len(first.records_for(interval.name)) == 2
+
+  later = ServiceRecord(
+    interval=interval.name,
+    performed="day 300",
+    by="technician",
+    attestation=Attestation.WITNESSED,
+    since=Accrued(runs=1.0),
+  )
+  history = InstrumentHealth(records=(overdue, later), **kwargs)
+  assert history.entitlement() is Entitlement.ENTITLED, "separate discharges are a history"
+  assert history.conflicting() == ()
+  assert history.record_for(interval.name) is later
+
+
+def test_one_record_cannot_discharge_two_obligations_sharing_a_name():
+  """A service record names the interval it discharged and nothing else.
+
+  Two obligations sharing a name are therefore discharged by one signature, and a
+  calibration and a qualification that were never both performed both read as done.
+  'annual_calibration', 'pm' and 'tip_change' are the names a real lab reuses.
+  """
+  calibration = _calibration(name="annual", every_days=365.0, every_runs=None)
+  qualification = Interval(
+    name="annual",
+    instrument=calibration.instrument,
+    kind=IntervalKind.QUALIFICATION,
+    restores="requalify the pump head against the reference plate",
+    basis=Basis.VENDOR,
+    every_days=365.0,
+  )
+  with pytest.raises(ValueError, match="declared twice"):
+    InstrumentHealth(
+      instrument=calibration.instrument,
+      obligations=(calibration, qualification),
+      records=(_serviced(calibration, Accrued(days=10.0)),),
+    )
+
+
+def test_a_health_record_filed_under_another_instrument_entitles_nothing():
+  """One calibration, performed once, on one box, reported nine boxes entitled.
+
+  `Interval.instrument` and `InstrumentHealth.instrument` are two stored copies of one
+  fact and nothing compared them, so the workcell view honored whatever key a record was
+  filed under. The docstring defends against omitting an instrument; the failure here is
+  misattribution, which produces a PASS rather than a gap.
+  """
+  wc = Workcell.default()
+  keys = list(wc.present_keys()) + list(wc.federated)
+  one = _health(_calibration(every_runs=100.0), since=Accrued(runs=1.0))
+  assert one.entitlement() is Entitlement.ENTITLED, "the record is real; only its filing is wrong"
+
+  with pytest.raises(ValueError, match="filed under"):
+    entitlement_summary(wc, {k: one for k in keys})
+  with pytest.raises(ValueError, match="filed under"):
+    untrusted_instruments(wc, {k: one for k in keys})
+
+
+def test_an_obligation_is_resolved_only_against_its_own_instruments_history():
+  """One box's paperwork does not entitle another, at either level.
+
+  Loaded through the module tables this reported tecan ENTITLED on star's pump service,
+  carrying a Standing whose `.instrument` and whose `.interval.instrument` disagreed.
+  """
+  with pytest.raises(ValueError, match="does not entitle another"):
+    InstrumentHealth(instrument="star", obligations=(_calibration(instrument="tecan"),))
+
+  liquid_handler = _health(_calibration(instrument="liquid_handler", every_runs=100.0), since=Accrued(runs=1.0))
+  with pytest.raises(ValueError, match="does not entitle another"):
+    standing(liquid_handler, _calibration(instrument="tecan"))
 
 
 # -- no field may silence the report -------------------------------------------
@@ -462,3 +748,65 @@ def test_every_instrument_lands_in_exactly_one_bucket():
   buckets = sum(counts[e.value] for e in Entitlement)
   assert buckets == counts["total"]
   assert counts[Entitlement.UNKNOWN.value] == counts["total"]
+
+
+def test_a_workcell_that_declares_no_instrument_is_not_a_clean_lab():
+  """The `all()`-over-nothing shape, one level up from the obligation list.
+
+  The natural call is `if not untrusted_instruments(wc): print("every instrument
+  entitled")`, and an empty list read exactly that way for a workcell that declares no
+  instruments at all. `BoundaryReport.clear` guards its own version of this with
+  `bool(self.rows)` and nothing here did. Emptiness is the finding, not the absence of one.
+  """
+  empty = Workcell(name="empty")
+  assert empty.present_keys() == [] and empty.federated == ()
+
+  rows = untrusted_instruments(empty)
+  assert rows, "an empty list reads as a fully entitled lab"
+  assert rows[0].entitlement is Entitlement.UNKNOWN
+  assert rows[0].restores, "even this row names what would fix it"
+
+  with pytest.raises(ValueError, match="declares no present or federated instrument"):
+    entitlement_summary(empty)
+
+
+# -- the prose this module rests on ---------------------------------------------
+
+
+def test_the_vacuous_pass_this_module_cites_is_one_qc_actually_has():
+  """A precedent has to be a case the sibling really has, checked rather than asserted.
+
+  `qc.evaluate` refuses an empty measurement dict by name, so citing that as the vacuous
+  pass would be a claim this repo's own code contradicts. The real analogue for an empty
+  obligation list is a gate that declares no criteria: `qc.readiness` refuses it and
+  `qc.evaluate` does not.
+  """
+  from autonomous_lab.ledger import build_ledger
+  from autonomous_lab.protocols import SINGLE_CELL_GENOMICS
+  from autonomous_lab.qc import LIBRARY_QUANT_GATE, Decision, Gate, Readiness, evaluate, readiness
+
+  absent = evaluate(LIBRARY_QUANT_GATE, {})
+  assert not absent.ok and absent.decision is not Decision.CONTINUE
+  assert "not a pass" in absent.reason, "the empty measurement dict is refused by name"
+
+  declares_nothing = Gate(name="declares_nothing", after_step="x", criteria=(), blocks="y")
+  assert evaluate(declares_nothing, {}).ok, "the case durability cites: no criteria, and it passes"
+  refused = readiness(declares_nothing, build_ledger(SINGLE_CELL_GENOMICS), {})
+  assert refused.readiness is Readiness.UNSATISFIABLE, "and the sibling that refuses it"
+
+  doc = InstrumentHealth.__doc__ or ""
+  assert "declares no" in doc and "criteria" in doc
+  assert "qc.readiness" in doc
+
+
+def test_no_refusal_rests_on_a_claim_about_a_literature():
+  """A refusal states what a number would require. It does not survey a field.
+
+  "which no published autonomous-lab work reports" is a universal negative with no
+  citation, carried in a string, inside a module whose argument is that an unsourced
+  number becomes a specification. Nothing in this package can check it.
+  """
+  for r in NOT_COMPUTED:
+    text = f"{r.why} {r.what_it_would_take}".lower()
+    for claim in ("no published", "nobody has published", "has never been reported", "no one has shown"):
+      assert claim not in text, f"'{r.quantity}' rests on a claim nothing here can check"

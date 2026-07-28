@@ -20,8 +20,13 @@ from enum import Enum
 import pytest
 
 from autonomous_lab import Workcell, build_ledger, protocols
-from autonomous_lab.model import Protocol, Step, Verdict, ZeroDecodeOp
-from autonomous_lab.qc import GATES, PROTOCOL_GATES, Basis
+from autonomous_lab.model import Artifact, Protocol, Step, Verdict, ZeroDecodeOp
+from autonomous_lab.qc import (
+  GATES,
+  MEASUREMENTS,
+  PROTOCOL_GATES,
+  Basis,
+)
 from autonomous_lab.workcell import InstrumentConfig
 from autonomous_lab import feedback
 from autonomous_lab.feedback import (
@@ -44,7 +49,19 @@ from autonomous_lab.feedback import (
 # -- fixtures ------------------------------------------------------------------
 
 
-def _env(quantity="q", lower=0.5, upper=None, basis=Basis.IN_HOUSE):
+# The quantity the fixture protocols genuinely sense. qc declares it, qc says it arrives on
+# the artifact 'run_outcome', and the fixture's sensor step is the step that produces that
+# artifact -- so a loop built out of these has a real sensor-to-quantity relationship rather
+# than an author's say-so. A fixture sensing a name qc has never heard of, off a step that
+# produces nothing, is the counterexample this module exists to refuse, and a suite whose
+# definition of "well formed" was that shape could not catch it.
+SENSED = "run_yield_pf"
+
+
+def _env(quantity=SENSED, lower=0.5, upper=None, basis=Basis.IN_HOUSE):
+  """Units come from qc for any quantity qc declares, and are invented only where it cannot."""
+  if quantity in MEASUREMENTS:
+    return Envelope.for_quantity(quantity, lower=lower, upper=upper, basis=basis)
   return Envelope(quantity=quantity, units="u", lower=lower, upper=upper, basis=basis)
 
 
@@ -54,7 +71,7 @@ def _loop(
   envelope=None,
   correction=Correction.HOLD,
   applied_by=Controller.CODED,
-  quantity="q",
+  quantity=SENSED,
   name="test_loop",
 ):
   return Loop(
@@ -68,48 +85,95 @@ def _loop(
   )
 
 
-def _two_automated_steps():
-  """A protocol whose every step runs headless, so nothing but the loop can be at fault."""
+def _sensor_then_actuator():
+  """Every step headless AND the sensor genuinely produces the quantity's artifact.
+
+  Both halves matter. Headless means the ledger cannot be what refuses a loop here, and the
+  sensor producing 'run_outcome' means qc's own resolution of run_yield_pf lands on this
+  step, so nothing but the loop can be at fault.
+  """
   return Protocol(
     name="tiny",
     summary="test",
+    artifacts=(Artifact("run_outcome", note="run state and outcome, read off the folder"),),
     steps=(
-      Step(instrument="element_aviti", op=ZeroDecodeOp.PROBE_HTTP.value, summary="sensor"),
       Step(
         instrument="element_aviti",
         op=ZeroDecodeOp.WATCH_RUN_FOLDER.value,
-        summary="actuator",
+        summary="sensor",
+        produces=("run_outcome",),
+        params={"run_dir": "/tmp/x"},
+      ),
+      Step(instrument="element_aviti", op=ZeroDecodeOp.PROBE_HTTP.value, summary="actuator"),
+    ),
+  )
+
+
+def _actuator_then_sensor():
+  """The same two steps with the sensor after the actuator, so only the ORDER is wrong.
+
+  Kept apart from the well-formed fixture rather than expressed by swapping a loop's two
+  arguments, because the sensor has to stay the step that really produces the number for the
+  lateness refusal to be the only thing under test.
+  """
+  return Protocol(
+    name="tiny",
+    summary="test",
+    artifacts=(Artifact("run_outcome", note="run state and outcome, read off the folder"),),
+    steps=(
+      Step(instrument="element_aviti", op=ZeroDecodeOp.PROBE_HTTP.value, summary="actuator"),
+      Step(
+        instrument="element_aviti",
+        op=ZeroDecodeOp.WATCH_RUN_FOLDER.value,
+        summary="sensor",
+        produces=("run_outcome",),
         params={"run_dir": "/tmp/x"},
       ),
     ),
   )
+
+
+def _two_automated_steps():
+  return _sensor_then_actuator()
 
 
 def _three_automated_steps():
   return Protocol(
     name="tiny3",
     summary="test",
+    artifacts=(Artifact("run_outcome", note="run state and outcome, read off the folder"),),
     steps=(
-      Step(instrument="element_aviti", op=ZeroDecodeOp.PROBE_HTTP.value, summary="sensor"),
-      Step(instrument="namocell", op=ZeroDecodeOp.DISCOVER_USB.value, summary="in between"),
       Step(
         instrument="element_aviti",
         op=ZeroDecodeOp.WATCH_RUN_FOLDER.value,
-        summary="actuator",
+        summary="sensor",
+        produces=("run_outcome",),
         params={"run_dir": "/tmp/x"},
       ),
+      Step(instrument="namocell", op=ZeroDecodeOp.DISCOVER_USB.value, summary="in between"),
+      Step(instrument="element_aviti", op=ZeroDecodeOp.PROBE_HTTP.value, summary="actuator"),
     ),
   )
 
 
 def _blocked_sensor_protocol():
-  """A sensor step the workcell cannot drive, sitting after the step it would correct."""
+  """A sensor step the workcell cannot drive, sitting after the step it would correct.
+
+  The sort produces 'sorted_plate', which is where qc says well_occupancy comes from, so
+  this loop's sensor is real and every one of its four refusals is earned somewhere else.
+  """
   return Protocol(
     name="blocked",
     summary="test",
+    artifacts=(Artifact("sorted_plate", physical=True, note="96-well, one cell per well"),),
     steps=(
       Step(instrument="namocell", op=ZeroDecodeOp.DISCOVER_USB.value, summary="actuator"),
-      Step(instrument="namocell", op="start_sort", summary="sensor"),
+      Step(
+        instrument="namocell",
+        op="start_sort",
+        summary="sensor",
+        produces=("sorted_plate",),
+      ),
     ),
   )
 
@@ -125,12 +189,28 @@ def _costed(protocol, wc=None):
 
 
 def test_a_well_formed_loop_closes():
+  """The positive control, and it has to be a REAL loop or it controls nothing.
+
+  Every leg is checkable against something other than the declaration: the quantity is one
+  qc declares, the sensor step is the step that produces the artifact qc says the number
+  arrives on, both steps run headless, and a coded controller may stop a line. A positive
+  control built on a quantity nothing measures would pass here whether or not the module
+  checked the sensor at all, which is exactly how a loop over an unproduced number reports
+  itself closed while the suite stays green.
+  """
   protocol, ledger = _costed(_two_automated_steps())
-  loop = _loop("probe_http", "watch_run_folder", envelope=_env())
+  loop = _loop("watch_run_folder", "probe_http", envelope=_env())
   closure = can_close(loop, protocol, ledger)
   assert closure.verdict is Closable.CLOSES
   assert closure.closes
   assert closure.blockers == ()
+
+  # The control is only a control while these hold: qc knows the quantity, and the step the
+  # loop names is the one the protocol produces its artifact at.
+  assert loop.quantity in MEASUREMENTS
+  produced_by = MEASUREMENTS[loop.quantity].produced_by
+  sensor = next(s for s in protocol.steps if s.op == loop.measured_at)
+  assert produced_by in sensor.produces
 
 
 # -- refusal one: the sensor is downstream of the actuator ---------------------
@@ -139,11 +219,11 @@ def test_a_well_formed_loop_closes():
 def test_a_sensor_downstream_of_its_actuator_is_refused_with_that_reason():
   """The load-bearing check. A measurement taken after the correction point steers nothing.
 
-  Everything else about this loop is right: it has an envelope, both steps run headless, and
-  a coded controller may make the correction. The only thing wrong is the order, and the
-  order alone must refuse it.
+  Everything else about this loop is right: it has an envelope, both steps run headless, a
+  coded controller may make the correction, and the sensor really is the step that produces
+  the number. The only thing wrong is the order, and the order alone must refuse it.
   """
-  protocol, ledger = _costed(_two_automated_steps())
+  protocol, ledger = _costed(_actuator_then_sensor())
   loop = _loop("watch_run_folder", "probe_http", envelope=_env())
   closure = can_close(loop, protocol, ledger)
   assert closure.verdict is Closable.OPEN_LOOP_SENSOR_TOO_LATE
@@ -165,7 +245,7 @@ def test_measuring_at_the_step_being_corrected_is_open_too():
   package does not model is the same overclaim as calling an unbenchmarked robot trusted.
   """
   protocol, ledger = _costed(_two_automated_steps())
-  loop = _loop("probe_http", "probe_http", envelope=_env())
+  loop = _loop("watch_run_folder", "watch_run_folder", envelope=_env())
   closure = can_close(loop, protocol, ledger)
   assert closure.verdict is Closable.OPEN_LOOP_SENSOR_TOO_LATE
   assert "atomic" in closure.reason
@@ -177,7 +257,7 @@ def test_measuring_at_the_step_being_corrected_is_open_too():
 def test_a_loop_steering_toward_nothing_is_refused_separately():
   """Distinct from lateness, and fixed by an experiment rather than by a reordering."""
   protocol, ledger = _costed(_two_automated_steps())
-  loop = _loop("probe_http", "watch_run_folder", envelope=None)
+  loop = _loop("watch_run_folder", "probe_http", envelope=None)
   closure = can_close(loop, protocol, ledger)
   assert closure.verdict is Closable.NO_ENVELOPE
   assert closure.verdict is not Closable.OPEN_LOOP_SENSOR_TOO_LATE
@@ -192,7 +272,7 @@ def test_absence_of_an_envelope_never_reads_as_a_pass():
   reports every envelope-less loop as closed.
   """
   protocol, ledger = _costed(_two_automated_steps())
-  closure = can_close(_loop("probe_http", "watch_run_folder"), protocol, ledger)
+  closure = can_close(_loop("watch_run_folder", "probe_http"), protocol, ledger)
   assert not closure.closes
   assert Closable.NO_ENVELOPE in closure.refusals()
 
@@ -211,7 +291,7 @@ def test_an_inverted_envelope_is_refused():
 def test_an_envelope_on_a_neighbouring_quantity_is_not_an_envelope_for_this_one():
   """A declaration that a summary would count and that bounds the wrong thing."""
   protocol, ledger = _costed(_two_automated_steps())
-  loop = _loop("probe_http", "watch_run_folder", envelope=_env(quantity="something_else"))
+  loop = _loop("watch_run_folder", "probe_http", envelope=_env(quantity="something_else"))
   closure = can_close(loop, protocol, ledger)
   assert closure.verdict is Closable.NO_ENVELOPE
   assert "something_else" in closure.reason
@@ -236,7 +316,7 @@ def test_measurement_availability_is_resolved_from_the_ledger_not_asserted():
   the ledger would be worse than no control layer.
   """
   protocol = _two_automated_steps()
-  loop = _loop("probe_http", "watch_run_folder", envelope=_env())
+  loop = _loop("watch_run_folder", "probe_http", envelope=_env())
 
   full = build_ledger(protocol, Workcell.default())
   assert can_close(loop, protocol, full).closes
@@ -282,8 +362,8 @@ def test_a_broken_instrument_and_an_unwired_one_refuse_alike_and_report_differen
 def test_an_unpermitted_correction_is_a_fourth_and_separate_reason():
   protocol, ledger = _costed(_two_automated_steps())
   loop = _loop(
-    "probe_http",
     "watch_run_folder",
+    "probe_http",
     envelope=_env(),
     correction=Correction.DISCARD,
     applied_by=Controller.MODEL,
@@ -326,12 +406,15 @@ def test_a_drafting_model_still_counts_as_a_model_in_the_path():
 def test_the_four_refusals_stay_four_distinct_verdicts():
   """Three of these are the ones the module exists to keep apart, and each has its own fix."""
   protocol, ledger = _costed(_two_automated_steps())
-  late = can_close(_loop("watch_run_folder", "probe_http", envelope=_env()), protocol, ledger)
-  targetless = can_close(_loop("probe_http", "watch_run_folder"), protocol, ledger)
+  late_protocol, late_ledger = _costed(_actuator_then_sensor())
+  late = can_close(
+    _loop("watch_run_folder", "probe_http", envelope=_env()), late_protocol, late_ledger
+  )
+  targetless = can_close(_loop("watch_run_folder", "probe_http"), protocol, ledger)
   unpermitted = can_close(
     _loop(
-      "probe_http",
       "watch_run_folder",
+      "probe_http",
       envelope=_env(),
       correction=Correction.DISCARD,
       applied_by=Controller.MODEL,
@@ -358,6 +441,7 @@ def test_a_loop_broken_four_ways_reports_all_four_and_headlines_the_structural_o
     envelope=None,
     correction=Correction.DISCARD,
     applied_by=Controller.MODEL,
+    quantity="well_occupancy",
   )
   closure = can_close(loop, protocol, ledger)
   assert closure.refusals() == (
@@ -436,7 +520,7 @@ def test_the_quantities_this_module_will_not_emit_are_named():
 def test_in_flight_exposure_is_a_plate_count_and_not_a_duration():
   """The honest form of 'how fast can this loop react', in the unit the protocol knows."""
   protocol = _three_automated_steps()
-  flight = in_flight_exposure(_loop("probe_http", "watch_run_folder", envelope=_env()), protocol)
+  flight = in_flight_exposure(_loop("watch_run_folder", "probe_http", envelope=_env()), protocol)
   assert flight.steps_between == 1
   assert flight.intervening == ("discover_usb",)
   assert not flight.immediate
@@ -450,14 +534,14 @@ def test_in_flight_exposure_is_a_plate_count_and_not_a_duration():
 
 def test_a_correction_landing_at_the_next_step_commits_nothing_in_between():
   protocol = _two_automated_steps()
-  flight = in_flight_exposure(_loop("probe_http", "watch_run_folder", envelope=_env()), protocol)
+  flight = in_flight_exposure(_loop("watch_run_folder", "probe_http", envelope=_env()), protocol)
   assert flight.steps_between == 0
   assert flight.immediate
 
 
 def test_in_flight_exposure_refuses_a_loop_that_never_reaches_its_material():
   """Zero would read as the best possible case rather than as the absence of a loop."""
-  protocol = _two_automated_steps()
+  protocol = _actuator_then_sensor()
   with pytest.raises(ValueError, match="measures at or after"):
     in_flight_exposure(_loop("watch_run_folder", "probe_http", envelope=_env()), protocol)
 
@@ -493,7 +577,7 @@ def test_a_ledger_built_for_another_protocol_is_refused():
   protocol = _two_automated_steps()
   other = build_ledger(protocols.get("single_cell_genomics"))
   with pytest.raises(ValueError, match="built for protocol"):
-    can_close(_loop("probe_http", "watch_run_folder", envelope=_env()), protocol, other)
+    can_close(_loop("watch_run_folder", "probe_http", envelope=_env()), protocol, other)
 
 
 # -- envelopes come from qc, never from here -----------------------------------
@@ -535,7 +619,7 @@ def test_an_unvalidated_envelope_is_reported_and_does_not_refuse_the_loop():
   all. It is not: this one needs a titration, and the loop works meanwhile.
   """
   protocol, ledger = _costed(_two_automated_steps())
-  loop = _loop("probe_http", "watch_run_folder", envelope=_env(basis=Basis.VENDOR))
+  loop = _loop("watch_run_folder", "probe_http", envelope=_env(basis=Basis.VENDOR))
   closure = can_close(loop, protocol, ledger)
   assert closure.closes
   assert not loop.envelope.validated

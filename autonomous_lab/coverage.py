@@ -31,21 +31,28 @@ detectors and unevaluable gates reports a lab as covered while its material is b
 destroyed silently -- and reports it in the exact language a reviewer would accept.
 
 COVERED here means covered by something that works with nobody in the room, and only two
-things qualify: a deployed and validated visual check, and an evaluable gate reading an
+things qualify: a deployed and validated visual check, and a gate that fires headless on an
 appropriate assay. An operator noticing is not coverage in a package about unattended
-operation; it is the condition this whole package exists to remove. Data analysis after
-sequencing is not coverage of a sample either, because the flow cell is already spent by the
-time it speaks. Both are real all the same, so every row carries the path `recovery`
-resolved, and nothing here ever claims that nothing anywhere would notice when a sibling
-layer says something would. The claim is narrower and worth more: nothing MACHINE-CHECKABLE
-stands between this failure and the material.
+operation; it is the condition this whole package exists to remove, and a SUPERVISED gate is
+that same operator holding a pipette in one hand and a screen in the other. Data analysis
+after sequencing is not coverage of a sample either, because the flow cell is already spent
+by the time it speaks. All of those are real all the same, so every row carries the path
+`recovery` resolved, and nothing here ever claims that nothing anywhere would notice when a
+sibling layer says something would. The claim is narrower and worth more: NO DECLARED
+DETECTOR AND NO EVALUABLE GATE stands between this failure and the material. It is
+deliberately not the broader claim that nothing machine-checkable does -- an instrument
+raising USBError before it moves is machine-checkable and is not a detector this module
+counts -- and `residual` is where an instrument-raised or post-hoc path is reported instead.
 
 `sota_lift` is the buying decision. Given a better vision capability it reports which
 failures move from uncovered to covered -- and, more prominently, which do not move at ANY
 capability, because they are INVISIBLE. The second list is the point of the function.
 Upgrading a model has a ceiling, the ceiling is physics rather than engineering, and a lab
 reading only the first list will keep buying model upgrades against failures no model
-resolves.
+resolves. A third list is required for the same reason the second one is: a real proposal is
+partial, and a failure that a camera could reach and that THIS proposal does not reach is
+neither lifted nor at the ceiling. Reported in neither list it disappears, and the report
+becomes the purchase justification the second list was added to prevent.
 
 `mandatory_gates` states the same fact from the other side, as a demand rather than a gap.
 For an INVISIBLE failure that destroys material a gate is not one option among several; it
@@ -60,7 +67,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from .ledger import build_ledger
-from .qc import MEASUREMENTS, GateReport, Measurement, gate_report
+from .qc import MEASUREMENTS, GateReport, Measurement, Readiness, gate_report
 from .recovery import (
   FAILURE_MODES,
   Detection,
@@ -90,6 +97,48 @@ def _destroys_material(failure: FailureMode) -> bool:
   return probe.destructive_and_silent
 
 
+class GateStanding(str, Enum):
+  """What a declared gate actually does for one failure in one workcell.
+
+  A boolean would collapse six situations that call for six different actions, and two of
+  the collapses are how a coverage report starts lying. The first is SUPERVISED read as
+  evaluable: `qc.Readiness.evaluable` is true for it, because from qc's side the number does
+  arrive, and it arrives with a human at the instrument -- which is the exact condition an
+  unattended workcell is built to remove. The second is UNMEASURED read as appropriate: a
+  gate whose measurement nobody declared has an unknown assay, and unknown is not a pass
+  here any more than it is in `qc.evaluate`.
+
+  DEAD and ABSENT are separated for the same reason `Uncovered` separates its two members.
+  A dead gate is an instrument repair. A gate that is not on the protocol is an assay
+  somebody still has to design, and the two are not the same budget.
+  """
+
+  COUNTS = "counts"  # evaluable with nobody in the room, on an assay that suits the sample
+  SUPERVISED = "supervised"  # a number arrives, and only with a human at the instrument
+  UNMEASURED = "unmeasured"  # the assay it reads was never declared, so it is unverified
+  WRONG_ASSAY = "wrong_assay"  # a real, precise number about something other than the sample
+  DEAD = "dead"  # unsatisfiable: no number arrives at all
+  ABSENT = "absent"  # no gate on this protocol reads what this failure changes
+
+  @property
+  def counts_as_coverage(self) -> bool:
+    """The load-bearing line: the one member that holds a failure with nobody in the room."""
+    return self is GateStanding.COUNTS
+
+  @property
+  def reveals_the_failure(self) -> bool:
+    """Whether the gate would surface THIS failure at all, coverage or not.
+
+    SUPERVISED is the only member that is not coverage and still reveals: a person reads
+    the number and the failure is found. That is why it is reported as a residual path
+    rather than dropped -- the module refuses to count it and equally refuses to claim
+    nobody would notice. WRONG_ASSAY is on the other side of the line and it is worth being
+    precise about why: the number arrives, the gate passes, and it passes on an empty
+    library, so the path does not merely fail to be unattended, it fails to detect.
+    """
+    return self in (GateStanding.COUNTS, GateStanding.SUPERVISED)
+
+
 class Cover(str, Enum):
   """How a failure is actually caught in a given workcell.
 
@@ -105,13 +154,19 @@ class Cover(str, Enum):
   """
 
   VISION = "vision"  # a declared visual check is deployed and validated here
-  GATE = "gate"  # a declared gate is evaluable and reads an appropriate assay
+  GATE = "gate"  # a declared gate fires headless and reads an appropriate assay
   BOTH = "both"  # either alone would hold it
   NEITHER = "neither"  # no camera and no gate; the row says which kind of nothing
 
   @property
   def covered(self) -> bool:
-    """True where something machine-checkable stands between the failure and the material."""
+    """True where a deployed visual check or an evaluable gate stands before the material.
+
+    Narrower than "something machine-checkable", and the narrowness is deliberate rather
+    than an oversight. An instrument that raises before it moves is machine-checkable and
+    is not one of these two; it is reported on the row as a residual path. A NEITHER row
+    means no declared detector and no gate this module counts, never that the lab is blind.
+    """
     return self is not Cover.NEITHER
 
   @property
@@ -125,9 +180,14 @@ class Cover(str, Enum):
     if self is Cover.VISION:
       return "a deployed, validated visual check"
     if self is Cover.GATE:
-      return "an evaluable gate reading an assay appropriate to the sample"
+      return (
+        "a gate that fires with nobody at the instrument, reading an assay appropriate to "
+        "the sample"
+      )
     if self is Cover.BOTH:
-      return "a deployed visual check and an evaluable gate; either alone would hold it"
+      return (
+        "a deployed visual check and a gate that fires unattended; either alone would hold it"
+      )
     return "nothing; the row states whether a detector or a different instrument would close it"
 
 
@@ -181,8 +241,18 @@ class CoverageRow:
   vision_deployable: bool  # exists AND every requirement is met in this workcell
   vision_reason: str
   gate: Optional[str]  # the declared gate that would reveal it, if any
-  gate_evaluable: bool  # exists AND its inputs arrive AND the assay suits the sample
+  gate_standing: GateStanding  # what that gate does here: the six answers, not a boolean
   gate_reason: str
+
+  @property
+  def gate_evaluable(self) -> bool:
+    """Whether the gate counts as coverage. Derived, so it cannot drift from the standing.
+
+    Kept as a name because it is what a caller asks, and kept as a property because the
+    two-valued answer is one reading of a six-valued fact and the six-valued fact is the
+    one this module stores.
+    """
+    return self.gate_standing.counts_as_coverage
 
   @property
   def severity(self) -> Severity:
@@ -232,21 +302,39 @@ class CoverageRow:
 
   @property
   def residual(self) -> Optional[Detection]:
-    """The path `recovery` resolved that is neither a camera nor a gate, where one survives.
+    """The path `recovery` resolved that this module does not count, where one survives.
 
-    None when something machine-checkable already holds the failure, and None when recovery
-    found nothing either. Anything else is a real path this module deliberately does not count
-    as coverage, and reporting it is what keeps an uncovered row from being read as a claim
+    None when something already holds the failure, and None when recovery found nothing
+    either. Anything else is a real path this module deliberately does not count as
+    coverage, and reporting it is what keeps an uncovered row from being read as a claim
     that the failure is invisible to the entire lab.
+
+    A path this row has already REFUSED is also None, and that is the difference between a
+    residual and an excuse. `recovery` resolves the declared path against its own inputs,
+    which are not always these: it takes a QC_GATE on trust when nobody handed it a gate
+    report, and it asks only whether a gate can fire, not whether the number is about this
+    sample. Republishing its answer beside a gate_reason that says the gate is unsatisfiable
+    would put two computations of one fact on one row, disagreeing, with the reader left to
+    pick. SUPERVISED survives here on purpose: that gate does reveal the failure, to a
+    person, which is precisely a path worth naming and not worth counting.
     """
     if self.cover.covered or self.effective.silent:
+      return None
+    if self.effective.detection is Detection.QC_GATE:
+      return self.effective.detection if self.gate_standing.reveals_the_failure else None
+    if self.effective.detection is Detection.VISION and not self.vision_deployable:
       return None
     return self.effective.detection
 
   @property
   def unwatched(self) -> bool:
-    """No camera, no gate, and nothing else either. The rows that should be read first."""
-    return not self.cover.covered and self.effective.silent
+    """No camera, no gate, and nothing else either. The rows that should be read first.
+
+    Asked of `residual` rather than of `effective.silent` directly, because a failure whose
+    only remaining path this row just refused is unwatched in fact however loudly the plan
+    claims otherwise.
+    """
+    return not self.cover.covered and self.residual is None
 
   def closes_it(self) -> str:
     """The next action that would put a machine check between this failure and the material.
@@ -332,20 +420,42 @@ class CoverageReport:
     """No camera, no gate, and `recovery` found nothing else."""
     return [r for r in self.rows if r.unwatched]
 
-  def complete(self) -> bool:
-    """True only when every material-destroying failure has a machine check on it.
+  def destructive(self) -> List[CoverageRow]:
+    """Every row whose failure destroys material, held or not. What `complete` is about."""
+    return [r for r in self.rows if r.destroys_material]
 
-    `bool(self.rows)` is load-bearing, not defensive. An empty report satisfies the
-    all-clear by vacuity, and a composition that answered "complete" for a protocol it
-    resolved no failures on would be the same bug this package chases everywhere else: a
-    check that passes because it was handed nothing.
+  def in_scope(self) -> bool:
+    """Whether this report contains anything for an all-clear to be an all-clear ABOUT.
+
+    A report over rows none of which destroy material has no material-destroying failure
+    left uncovered, and answering "complete" to that is the vacuous pass wearing the last
+    costume this module had left. A row count does not test it: one row about a reader
+    timing out is enough to make an empty destructive population look like a cleared one,
+    and a caller scoping a report to a subprotocol gets an all-clear for a lab with no
+    machine check anywhere.
+
+    Separated rather than folded into `complete` because "nothing here destroys material"
+    is a real and different verdict from "everything that does is held", the same way
+    `Uncovered` splits one empty cell into two findings that imply different budgets.
     """
-    return bool(self.rows) and not self.uncovered_destructive()
+    return bool(self.destructive())
+
+  def complete(self) -> bool:
+    """True only when this report has material-destroying failures and all are held.
+
+    Both halves are load-bearing. The second is the claim; the first is what keeps the
+    claim from being earned by an empty population, which is the same bug this package
+    chases everywhere else -- a check that passes because it was handed nothing. An empty
+    report fails the first half, and so does a report that resolved only failures which
+    cost time.
+    """
+    return self.in_scope() and not self.uncovered_destructive()
 
   def counts(self) -> Dict[str, int]:
     return {
       "total": len(self.rows),
       "covered": len(self.covered()),
+      "destructive": len(self.destructive()),
       "vision": sum(1 for r in self.rows if r.cover is Cover.VISION),
       "gate": sum(1 for r in self.rows if r.cover is Cover.GATE),
       "both": sum(1 for r in self.rows if r.cover is Cover.BOTH),
@@ -370,12 +480,28 @@ def _vision_arm(
 
   Deployability is asked of `VisionCapability.available`, which already refuses an impossible
   check. Recomputing that test here would be a second opinion on a question vision owns.
+
+  Observability is recorded twice in this package -- on the VisualCheck and on the
+  FailureMode -- and this function is the only place the two records meet. `available`
+  consults the check's; every consumer downstream of this row consults the failure's. So a
+  disagreement is refused here rather than resolved, because resolving it would mean this
+  module picking a winner between two siblings that each own their half of the fact, and a
+  silent pick makes "can a camera ever see this" answerable two ways in one report.
   """
   check = check_catching(failure.name)
   if check is None:
     if failure.observable.reachable_by_vision:
       return None, False, "the condition is imageable and no visual check is declared for it"
     return None, False, "no camera resolves this condition at any model quality"
+  if check.observable is not failure.observable:
+    raise ValueError(
+      f"vision and the failure model disagree about '{failure.name}': the check "
+      f"'{check.name}' records it as {check.observable.value} while the failure mode "
+      f"records it as {failure.observable.value}. Composing the two would let a deployed "
+      f"check close a failure this package calls physically unreachable, or hold a ceiling "
+      f"over one a camera sees. Correct it in vision or in recovery; coverage will not "
+      f"choose between them."
+    )
   if capability.available(check):
     return check.name, True, f"'{check.name}' is deployed and validated in this workcell"
   if not check.possible:
@@ -391,40 +517,85 @@ def _vision_arm(
 
 def _gate_arm(
   failure: FailureMode, gates: GateReport, measurements: Dict[str, Measurement]
-) -> Tuple[Optional[str], bool, str]:
-  """(gate name, counts as coverage, reason) for the assay side of one failure.
+) -> Tuple[Optional[str], GateStanding, str]:
+  """(gate name, standing, reason) for the assay side of one failure.
 
-  Three ways a declared gate fails to be coverage, in increasing order of how quietly it
+  Five ways a declared gate fails to be coverage, in increasing order of how quietly it
   does so. It may not be on this protocol at all. It may be UNSATISFIABLE, which at least
-  fails loudly -- no number arrives. Or it may be evaluable and resting on a measurement that
-  is the wrong assay for the sample, which is the one that spends the flow cell: the
+  fails loudly -- no number arrives. It may fire only with a human at the instrument, which
+  is a real check and is not one this workcell has when it runs the way it was built to run.
+  It may read a measurement nobody declared, in which case whether the assay suits the
+  sample is unknown and unknown is not a pass. Or it may be evaluable and resting on a
+  measurement that is the wrong assay, which is the one that spends the flow cell: the
   instrument returns a real, precise, reproducible number about something other than the
   library, and the gate passes on it.
+
+  Every row bearing the name is resolved, not the first one. A report carrying two rows for
+  one gate is malformed, and the failure mode of `next(...)` over a malformed report is that
+  an optimistic duplicate placed above a dead one silences the dead one -- an author-settable
+  field that silences a report, by ordering rather than by value. The worst row wins, which
+  is also what `qc.GateReport.unsatisfiable` and `closes_the_loop` already say about the same
+  object: a gate that is unsatisfiable in any row of the report is unsatisfiable.
   """
   name = failure.via_gate
   if name is None:
-    return None, False, "no gate on this protocol reads what this failure changes"
-  row = next((r for r in gates.rows if r.gate.name == name), None)
-  if row is None:
+    return (
+      None,
+      GateStanding.ABSENT,
+      "no gate on this protocol reads what this failure changes",
+    )
+  matches = [r for r in gates.rows if r.gate.name == name]
+  if not matches:
     # The name is reported in the reason and deliberately NOT returned as the gate. A gate
     # that is not on this protocol reads nothing here, and returning its name would let the
     # uncovered classification treat a dangling reference as an assay that exists.
     return (
       None,
-      False,
+      GateStanding.ABSENT,
       f"the plan names '{name}' for this failure, and no such gate is on this protocol",
     )
-  if not row.evaluable:
-    return name, False, f"'{name}' is unsatisfiable: {row.reason}"
+  dead = next((r for r in matches if not r.evaluable), None)
+  if dead is not None:
+    return name, GateStanding.DEAD, f"'{name}' is unsatisfiable: {dead.reason}"
+  attended = next((r for r in matches if r.readiness is not Readiness.READY), None)
+  if attended is not None:
+    return (
+      name,
+      GateStanding.SUPERVISED,
+      f"'{name}' can be evaluated only with a human at the instrument, which is not coverage "
+      f"in a workcell that runs unattended: {attended.reason}",
+    )
+  undeclared: List[str] = []
+  for row in matches:
+    for key in row.gate.measurements:
+      if key not in measurements and key not in undeclared:
+        undeclared.append(key)
+  if undeclared:
+    # `qc.GateReport.inappropriate` skips a key it cannot resolve, which is correct for the
+    # question it answers -- it lists the assays known to be wrong -- and is fail-open for
+    # the question asked here. Silence about an assay is not a statement that the assay
+    # suits the sample, and converting it into one is the same bug as a gate evaluated
+    # against an empty measurement dict passing every criterion it was never handed.
+    return (
+      name,
+      GateStanding.UNMEASURED,
+      f"'{name}' reads '{undeclared[0]}', which is not a declared measurement here, so "
+      f"whether that assay suits this sample is unknown -- an unchecked assay is not an "
+      f"appropriate one",
+    )
   wrong = [m for gate_name, m in gates.inappropriate(measurements) if gate_name == name]
   if wrong:
     return (
       name,
-      False,
+      GateStanding.WRONG_ASSAY,
       f"'{name}' can be evaluated and rests on '{wrong[0].key}', which is the wrong assay "
       f"for this sample: {wrong[0].inappropriate_reason}",
     )
-  return name, True, f"'{name}' is evaluable and reads an assay appropriate to the sample"
+  return (
+    name,
+    GateStanding.COUNTS,
+    f"'{name}' is evaluable and reads an assay appropriate to the sample",
+  )
 
 
 def coverage_report(
@@ -441,12 +612,20 @@ def coverage_report(
   re-derived: the failure list comes from `recovery`, gate readiness from `qc`, and
   deployability from `vision`. That is why this cannot disagree with any of them.
 
-  It refuses two kinds of incoherent input rather than averaging over them. Reports about
+  It refuses three kinds of incoherent input rather than averaging over them. Reports about
   different protocols compose into a number about no lab at all. A recovery report built
   against a different vision capability than the one passed here does the same thing more
   quietly, because every row still looks well-formed -- so the mismatch is checked against
   the one place the two are forced to agree: a failure whose declared path is a camera is
   resolved by `recovery` exactly when its check is deployable.
+
+  The gate axis is checked the same way and for the same reason. `recovery_report(protocol)`
+  with no gate report is a valid public call and takes every declared QC_GATE path on trust,
+  so composing one with a real gate report produces rows that assert a gate is dead and that
+  the declared path still stands on it, in the same row -- and `unwatched()`, the list a
+  reader is told to read first, quietly loses the failures that matter most. Guarding one
+  axis and not the other is worse than guarding neither, because the guarded one makes the
+  gap look deliberate.
   """
   cap = vision_capability or VisionCapability.none()
   meas = measurements if measurements is not None else MEASUREMENTS
@@ -468,7 +647,7 @@ def coverage_report(
   for eff in recovery.rows:
     failure = eff.failure
     check_name, deployable, vision_reason = _vision_arm(failure, cap)
-    gate_name, evaluable, gate_reason = _gate_arm(failure, gates, meas)
+    gate_name, standing, gate_reason = _gate_arm(failure, gates, meas)
     if failure.declared_detection is Detection.VISION:
       if (eff.detection is Detection.VISION) != deployable:
         raise ValueError(
@@ -479,6 +658,22 @@ def coverage_report(
           f"built against a different capability, and composing the two would report a "
           f"workcell nobody has."
         )
+    if failure.declared_detection is Detection.QC_GATE:
+      # Compared against the gate report's own evaluability and not against `standing`.
+      # This arm additionally refuses a supervised gate and an assay that does not suit the
+      # sample, questions `recovery.effective` never asks, so comparing to the standing
+      # would raise on the library_conc_od case where the two layers agree exactly.
+      declared = [r for r in gates.rows if r.gate.name == failure.via_gate]
+      live = bool(declared) and all(r.evaluable for r in declared)
+      if (eff.detection is Detection.QC_GATE) != live:
+        raise ValueError(
+          f"the recovery report and the gate report disagree about '{failure.name}': "
+          f"recovery resolved it to '{eff.detection.value}' while the gate report for "
+          f"'{gates.protocol}' says '{failure.via_gate}' is "
+          f"{'evaluable' if live else 'not evaluable'}. The recovery report was built "
+          f"against different gates, or against none at all, and composing the two would "
+          f"put a dead gate and a live detection path on one row."
+        )
     rows.append(
       CoverageRow(
         failure=failure,
@@ -487,7 +682,7 @@ def coverage_report(
         vision_deployable=deployable,
         vision_reason=vision_reason,
         gate=gate_name,
-        gate_evaluable=evaluable,
+        gate_standing=standing,
         gate_reason=gate_reason,
       )
     )
@@ -527,13 +722,38 @@ class Ceiling:
     return _destroys_material(self.failure)
 
 
+@dataclass(frozen=True)
+class StillBlocked:
+  """One failure a camera could reach that THIS proposal does not reach.
+
+  Neither a lift nor a ceiling, and the row that decides whether a partial purchase is worth
+  making. The ceiling says a failure is out of reach at any price. This says it is in reach
+  and that the money on the table does not buy it, and it names the requirement that would.
+  """
+
+  failure: FailureMode
+  check: Optional[str]
+  missing: Tuple[VisionRequirement, ...]  # what the proposal still lacks for this check
+  reason: str
+
+  @property
+  def destroys_material(self) -> bool:
+    return _destroys_material(self.failure)
+
+
 @dataclass
 class SotaLift:
-  """What a proposed vision capability buys, and what it provably does not.
+  """What a proposed vision capability buys, what it provably cannot, and what it misses.
 
-  Both lists are required output. A report that showed only `lifted` would be a purchase
-  justification, and every purchase justification for a better model is correct about the
-  failures it lists and silent about the ones that make the purchase insufficient.
+  All three lists are required output. A report that showed only `lifted` would be a
+  purchase justification, and every purchase justification for a better model is correct
+  about the failures it lists and silent about the ones that make the purchase
+  insufficient. `ceiling` alone does not fix that, because the ceiling only holds the
+  failures no capability reaches: a real proposal is partial, and the failures it leaves
+  uncovered while a further purchase would close them fall between the two lists and
+  vanish. `still_blocked` is where they land, and for the single-cell loop it is where the
+  most destructive routine failure in low-input prep lands under any proposal missing
+  LIGHTING.
   """
 
   protocol: str
@@ -541,6 +761,7 @@ class SotaLift:
   proposed: VisionCapability
   lifted: List[Lift] = field(default_factory=list)
   ceiling: List[Ceiling] = field(default_factory=list)
+  still_blocked: List[StillBlocked] = field(default_factory=list)
 
   @property
   def buys_nothing(self) -> bool:
@@ -550,12 +771,18 @@ class SotaLift:
     """The ceiling rows that cost material. The sentence a budget meeting needs."""
     return [c for c in self.ceiling if c.destroys_material]
 
+  def destructive_still_blocked(self) -> List[StillBlocked]:
+    """The still-blocked rows that cost material. The sentence that prices the next step."""
+    return [b for b in self.still_blocked if b.destroys_material]
+
   def counts(self) -> Dict[str, int]:
     return {
       "lifted": len(self.lifted),
       "lifted_destructive": sum(1 for lift in self.lifted if lift.destroys_material),
       "ceiling": len(self.ceiling),
       "ceiling_destructive": len(self.destructive_ceiling()),
+      "still_blocked": len(self.still_blocked),
+      "still_blocked_destructive": len(self.destructive_still_blocked()),
     }
 
 
@@ -573,7 +800,14 @@ def sota_lift(
   capability, because gates do not move when a model does. What changes between them is what
   the capability buys. What is uncovered and INVISIBLE in the second is the ceiling, and no
   further capability moves it -- so a lab reading only the lift will keep spending against
-  failures that are not a model problem.
+  failures that are not a model problem. What is uncovered and still imageable in the second
+  is what the proposal misses, and a lab reading only the first two lists will believe a
+  partial purchase was a complete one.
+
+  Every uncovered row of the second report lands in the ceiling or in still_blocked, and the
+  partition is checked rather than assumed. A row that falls out of both is not an omission a
+  reader can see: the counts still add up, the lists still read cleanly, and the failure is
+  simply absent.
   """
   led = ledger if ledger is not None else build_ledger(protocol)
   gts = gates if gates is not None else gate_report(protocol.name, led)
@@ -590,15 +824,17 @@ def sota_lift(
 
   lifted: List[Lift] = []
   ceiling: List[Ceiling] = []
+  still_blocked: List[StillBlocked] = []
   for row in after.rows:
     was = prior.get(row.failure.name)
     moved = was is not None and not was.cover.covered and row.cover.covered
     # A lift has to be attributable to a deployed check. The gate report is shared between
-    # the two runs, so nothing but vision can move a row -- and the INVISIBLE test is
-    # unreachable by construction, since VisionCapability.available already refuses an
-    # impossible check. Both are checked anyway: a lift reported for an INVISIBLE failure is
-    # the exact overclaim this function exists to prevent, and a guard that never fires costs
-    # nothing next to one that fires once against a real purchase.
+    # the two runs, so nothing but vision can move a row -- and the INVISIBLE test cannot
+    # fire, because `_vision_arm` refuses a check whose observability disagrees with the
+    # failure's and `VisionCapability.available` refuses an impossible check. Both are
+    # checked anyway: a lift reported for an INVISIBLE failure is the exact overclaim this
+    # function exists to prevent, and a guard that never fires costs nothing next to one
+    # that fires once against a real purchase.
     attributable = (
       row.observable.reachable_by_vision
       and row.vision_deployable
@@ -621,13 +857,15 @@ def sota_lift(
         )
       )
       continue
-    if not row.cover.covered and row.observable is Observable.INVISIBLE:
+    if row.cover.covered:
+      continue
+    if row.observable is Observable.INVISIBLE:
       # The residual is named where one survives, so that a row like star_resource_busy --
       # invisible, and loudly raised by the instrument itself -- is not read as a hole
       # merely because a camera cannot reach it. The ceiling is a statement about vision,
       # not a claim that nothing in the lab notices.
       residual = row.residual
-      standing = (
+      carried = (
         f" The declared {residual.value} path still stands on it at "
         f"{row.effective.latency.value}."
         if residual is not None
@@ -639,19 +877,68 @@ def sota_lift(
           reason=(
             f"'{row.failure.name}' is INVISIBLE: the failed run and the clean run produce "
             f"identical images, so no vision capability reaches it at any model quality. "
-            f"{row.gate_reason}.{standing}"
+            f"{row.gate_reason}.{carried}"
           ),
         )
       )
+      continue
+    check = check_catching(row.failure.name)
+    missing = proposed_capability.missing_for(check) if check is not None else ()
+    if check is None:
+      reason = (
+        f"'{row.failure.name}' is imageable and no visual check is declared for it, so this "
+        f"proposal cannot reach it at any capability until one is written"
+      )
+    elif missing:
+      reason = (
+        f"'{row.failure.name}' is imageable and '{check.name}' would hold it, and "
+        f"'{proposed_capability.name}' still misses "
+        + ", ".join(m.value for m in missing)
+        + ". This is a purchase away, not a physics problem, and the proposal on the table "
+        "does not make it"
+      )
+    else:
+      # Unreachable while `available` is a subset test over exactly `missing_for`. Kept
+      # because the alternative is a StillBlocked row whose reason column is empty, which
+      # reads as a failure nobody could account for.
+      reason = (
+        f"'{row.failure.name}' is imageable, '{check.name}' is deployable under this "
+        f"proposal, and the row is still uncovered; this module cannot say why"
+      )
+    still_blocked.append(
+      StillBlocked(
+        failure=row.failure,
+        check=row.vision_check,
+        missing=missing,
+        reason=reason,
+      )
+    )
+
+  reported = {c.failure.name for c in ceiling} | {b.failure.name for b in still_blocked}
+  remaining = {row.failure.name for row in after.uncovered()}
+  if reported != remaining:
+    # The three lists are the whole product, so a row that reaches none of them is a failure
+    # this function computed and then dropped. Refusing is the only honest response: a
+    # SotaLift missing a row is indistinguishable, to its reader, from one where the
+    # proposal covered it.
+    raise ValueError(
+      "sota_lift resolved failures it then reported in no list: "
+      + ", ".join(sorted(remaining - reported))
+      + ". Every uncovered failure under the proposed capability belongs to the ceiling or "
+      "to still_blocked, and a report that drops one is the purchase justification the "
+      "second and third lists exist to prevent."
+    )
 
   lifted.sort(key=lambda lift: (not lift.destroys_material, lift.failure.name))
   ceiling.sort(key=lambda c: (not c.destroys_material, c.failure.name))
+  still_blocked.sort(key=lambda b: (not b.destroys_material, b.failure.name))
   return SotaLift(
     protocol=protocol.name,
     current=current_capability,
     proposed=proposed_capability,
     lifted=lifted,
     ceiling=ceiling,
+    still_blocked=still_blocked,
   )
 
 
@@ -720,8 +1007,8 @@ def mandatory_gates(
         )
       )
       continue
-    name, evaluable, reason = _gate_arm(failure, gates, meas)
-    out.append(Demand(failure=failure, gate=name, met=evaluable, reason=reason))
+    name, standing, reason = _gate_arm(failure, gates, meas)
+    out.append(Demand(failure=failure, gate=name, met=standing.counts_as_coverage, reason=reason))
   return tuple(out)
 
 
@@ -739,8 +1026,10 @@ __all__ = [
   "CoverageReport",
   "CoverageRow",
   "Demand",
+  "GateStanding",
   "Lift",
   "SotaLift",
+  "StillBlocked",
   "Uncovered",
   "coverage_report",
   "mandatory_gates",

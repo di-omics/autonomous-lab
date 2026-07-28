@@ -24,14 +24,18 @@ order. A hardcoded order is advice about somebody else's lab.
 from __future__ import annotations
 
 import dataclasses
+import enum
+import itertools
 
 import pytest
 
-from autonomous_lab import protocols
-from autonomous_lab.intelligence import BENCHMARKS_BY_OP
+from autonomous_lab import protocols, teaching
+from autonomous_lab.intelligence import BENCHMARKS_BY_OP, BenchmarkStatus
 from autonomous_lab.model import Protocol, Step
+from autonomous_lab.qc import MEASUREMENTS, SORT_OCCUPANCY_GATE, Basis
 from autonomous_lab.teaching import (
   DEMONSTRATIONS,
+  EXEMPT,
   MACHINE_OBSERVATIONS,
   MIN_DEMONSTRATIONS,
   TRANSFERABLE,
@@ -55,7 +59,20 @@ POOLING = "library_pool"  # LOWER: representation CV
 LYSIS = "wgs_prep_lysis"  # WINDOW: delivered volume
 
 
-def _demo(value: float, op: str = CLEANUP, by: str = "scientist_a", conditions=None) -> Demonstration:
+# Every helper-built record gets its own source. Two runs of one operation are two runs
+# because they happened separately, and the evidence string is where that separateness is
+# recorded; a helper that stamped them all identically would be manufacturing the duplicate
+# the module now refuses, in every fixture in this file.
+_RUNS = itertools.count(1)
+
+
+def _demo(
+  value: float,
+  op: str = CLEANUP,
+  by: str = "scientist_a",
+  conditions=None,
+  evidence=None,
+) -> Demonstration:
   spec = TRANSFERABLE_BY_OP[op]
   return Demonstration(
     operation=op,
@@ -64,18 +81,27 @@ def _demo(value: float, op: str = CLEANUP, by: str = "scientist_a", conditions=N
     value=value,
     by=by,
     conditions=conditions if conditions is not None else spec.conditions,
+    evidence=evidence if evidence is not None else f"notebook page {next(_RUNS)}",
   )
 
 
-def _obs(value: float, op: str = CLEANUP, conditions=None) -> MachineObservation:
+def _obs(
+  value: float,
+  op: str = CLEANUP,
+  conditions=None,
+  metric=None,
+  units=None,
+  evidence=None,
+) -> MachineObservation:
   spec = TRANSFERABLE_BY_OP[op]
   return MachineObservation(
     operation=op,
-    metric=spec.metric,
-    units=spec.units,
+    metric=spec.metric if metric is None else metric,
+    units=spec.units if units is None else units,
     value=value,
     by="a run card",
     conditions=conditions if conditions is not None else spec.conditions,
+    evidence=evidence if evidence is not None else f"run {next(_RUNS)}",
   )
 
 
@@ -336,9 +362,18 @@ def test_the_top_of_the_queue_is_not_the_first_thing_declared():
 
 
 def test_an_empty_queue_over_no_protocols_is_not_a_finished_programme():
-  """Nothing to rank must not read as nothing left to do."""
-  assert demonstration_queue([]) == []
+  """Nothing to rank must not read as nothing left to do.
+
+  Asserting the empty value is asserting the ambiguity: `== []` is exactly what a lab that
+  had finished teaching its machines would also return, so the queue has to REFUSE rather
+  than come back empty, and the refusal is what this asserts.
+  """
+  nothing = demonstration_queue([])
+  assert len(nothing) == 0
+  assert nothing.operations_considered == 0
+  assert nothing.refusal() is not None
   assert not transfer_report([]).transfers()
+  assert transfer_report([]).refusal() is not None
   assert demonstration_queue([protocols.get("single_cell_genomics")])
 
 
@@ -428,6 +463,7 @@ def test_an_envelope_refuses_to_pool_two_different_metrics():
     value=85.0,
     by="scientist_b",
     conditions=spec.conditions,
+    evidence="notebook page 91",
   )
   with pytest.raises(ValueError, match="two metrics pooled"):
     Envelope(
@@ -454,7 +490,7 @@ def test_an_envelope_refuses_a_demonstration_of_another_operation():
 def test_an_untaught_operation_is_named_in_its_own_refusal():
   """The untaught case is the common one, and it is the case where neither the envelope nor
   the observations carry the operation's name -- both are absent. Without the caller
-  supplying it the refusal reads "no expert has demonstrated 'unknown'", which names nothing
+  supplying it the refusal reads "no expert envelope places 'unknown'", which names nothing
   and is useless as a queue entry, in the report whose entire job is to be that queue.
   """
   report = transfer_report(["library_pool"])
@@ -466,3 +502,465 @@ def test_an_untaught_operation_is_named_in_its_own_refusal():
   # And the bare function still works when the caller does not supply it.
   assert attainment(None, (), operation="named_op").operation == "named_op"
   assert attainment(None, ()).operation == "unknown"
+
+
+# -- the machine side gets the checks the expert side already had ---------------
+# Every test above this line places a well-formed observation. The observations below are
+# the malformed ones, and they are the ones that arrive from a script rather than from the
+# person who measured, which is why they are the ones that reach a report unchallenged.
+
+
+def test_a_machine_observation_in_other_units_is_refused_rather_than_compared():
+  """Recovery logged in percent against an envelope in fractions is not a comparison.
+
+  The mirror of `test_an_envelope_refuses_to_pool_two_different_metrics`, on the side the
+  original only trusted. Untouched, 85.0 percent placed against a 0.80-0.90 fraction band
+  reads as MEETS and the prose prints the machine's value beside the ENVELOPE's unit.
+  """
+  env = _envelope([0.80, 0.85, 0.90])
+  percent = [_obs(85.0, units="percent"), _obs(88.0, units="percent"), _obs(90.0, units="percent")]
+  with pytest.raises(ValueError, match="two metrics pooled"):
+    attainment(env, percent)
+
+
+def test_a_machine_observation_on_another_metric_is_refused():
+  env = _envelope([0.80, 0.85, 0.90])
+  renamed = [_obs(v, metric="fraction of wells with one cell") for v in (0.85, 0.88, 0.90)]
+  with pytest.raises(ValueError, match="two metrics pooled"):
+    attainment(env, renamed)
+
+
+def test_a_machine_observation_of_another_operation_is_refused():
+  """A sort occupancy filed under a cleanup must not read as that cleanup's parity."""
+  spec = TRANSFERABLE_BY_OP[CLEANUP]
+  env = _envelope([0.80, 0.85, 0.90])
+  misfiled = [
+    MachineObservation(
+      operation="start_sort",
+      metric=spec.metric,
+      units=spec.units,
+      value=0.99,
+      by="a run card",
+      conditions=spec.conditions,
+      evidence=f"run {i}",
+    )
+    for i in range(3)
+  ]
+  with pytest.raises(ValueError, match="two metrics pooled"):
+    attainment(env, misfiled)
+
+
+def test_the_worst_run_is_reported_in_the_units_of_the_run():
+  """The prose reads its unit off the observation, so a mismatch cannot hide in a sentence."""
+  env = _envelope([10.0, 12.0, 14.0], op=POOLING)
+  parity = attainment(env, [_obs(v, op=POOLING) for v in (5.0, 6.0, 7.0)])
+  assert parity.attainment is Attainment.MEETS
+  assert f"7.0 {TRANSFERABLE_BY_OP[POOLING].units}" in parity.reason
+
+
+# -- an envelope is a range over one experiment ---------------------------------
+
+
+def test_an_envelope_refuses_to_pool_two_sets_of_conditions():
+  """The failure the module says it exists to prevent, on the side nothing was checking.
+
+  Two demonstrations at 0.80 and 0.82 plus one at 0.30 under ten times the input pooled to
+  a 0.30-0.82 band, and three machine runs at a third of the expert's recovery then read as
+  MEETS against a floor the expert never produced under those conditions.
+  """
+  spec = TRANSFERABLE_BY_OP[CLEANUP]
+  with pytest.raises(ValueError, match="one set of conditions"):
+    Envelope(
+      operation=CLEANUP,
+      metric=spec.metric,
+      units=spec.units,
+      goal=spec.goal,
+      demonstrations=(
+        _demo(0.80),
+        _demo(0.82),
+        _demo(0.30, conditions="ten times the input amount"),
+      ),
+    )
+
+
+def test_an_off_condition_demonstration_cannot_widen_the_band_into_a_pass(monkeypatch):
+  """Adding a demonstration under conditions the machine never ran at must not flip a verdict."""
+  nanogram = tuple(_demo(v) for v in (0.85, 0.88, 0.90))
+  picogram = (_demo(0.40, conditions="picogram spike-in of known quantity"),)
+  runs = tuple(_obs(v) for v in (0.45, 0.50, 0.55))
+
+  monkeypatch.setattr(teaching, "DEMONSTRATIONS", nanogram)
+  monkeypatch.setattr(teaching, "MACHINE_OBSERVATIONS", runs)
+  monkeypatch.setattr(teaching, "ENVELOPES", teaching._build_envelopes())
+  control = teaching.transfer_report([CLEANUP])
+  assert control.counts()["below"] == 1
+
+  monkeypatch.setattr(teaching, "DEMONSTRATIONS", nanogram + picogram)
+  monkeypatch.setattr(teaching, "ENVELOPES", teaching._build_envelopes())
+  widened = teaching.transfer_report([CLEANUP])
+  assert widened.counts()["below"] == 1, "an off-condition demonstration widened the band"
+  assert not widened.transfers()
+  # The picogram run is its own experiment, and it keeps its own envelope.
+  assert len(teaching.envelopes_for(CLEANUP)) == 2
+  assert teaching.envelope_for(CLEANUP) is None
+  assert "different sets of conditions" in taught(CLEANUP)[1]
+
+
+# -- goal comes from the spec, and the comparison reads it off the enum ---------
+
+
+def test_an_envelope_cannot_redeclare_which_direction_is_better():
+  """The one field that flips a verdict, checked against the layer that owns it.
+
+  `test_no_field_anywhere_declares_a_tolerance_or_an_attainment` enumerates `goal` as an
+  acceptable field name. It is acceptable only because a mismatched one is refused, and a
+  test on names alone would bless the field that turns BELOW into MEETS.
+  """
+  for op, spec in TRANSFERABLE_BY_OP.items():
+    wrong = Goal.LOWER if spec.goal is not Goal.LOWER else Goal.HIGHER
+    with pytest.raises(ValueError, match="is better"):
+      Envelope(operation=op, metric=spec.metric, units=spec.units, goal=wrong)
+
+
+def test_an_envelope_cannot_restate_the_metric_or_the_units_either():
+  spec = TRANSFERABLE_BY_OP[CLEANUP]
+  with pytest.raises(ValueError, match="is better"):
+    Envelope(operation=CLEANUP, metric=spec.metric, units="percent", goal=spec.goal)
+
+
+def test_an_envelope_for_an_operation_nobody_specified_is_refused():
+  """`_build_envelopes` already treats this as an error; the public constructor must too."""
+  with pytest.raises(ValueError, match="no Transferable declares"):
+    Envelope(
+      operation="an_operation_nobody_ever_wrote_down",
+      metric="something",
+      units="units",
+      goal=Goal.HIGHER,
+    )
+
+
+def test_leaving_the_range_the_better_way_is_a_failure_exactly_where_the_goal_says_so():
+  """The two-sided rule is read off `Goal.outside_is_always_worse`, not restated as an else.
+
+  Every Goal member is exercised, so a fourth one cannot inherit WINDOW semantics from a
+  fall-through while the property reports False for it.
+  """
+  cases = (
+    (CLEANUP, [0.80, 0.85, 0.90], (0.95, 0.96, 0.97)),  # HIGHER: above the band
+    (POOLING, [10.0, 12.0, 14.0], (5.0, 6.0, 7.0)),  # LOWER: below the band
+    (LYSIS, [9.8, 10.0, 10.2], (11.0, 11.1, 11.2)),  # WINDOW: above the band
+  )
+  seen = set()
+  for op, demonstrated, runs in cases:
+    goal = TRANSFERABLE_BY_OP[op].goal
+    seen.add(goal)
+    env = _envelope(demonstrated, op=op)
+    parity = attainment(env, [_obs(v, op=op) for v in runs])
+    beyond_is_a_failure = parity.attainment is Attainment.BELOW
+    assert beyond_is_a_failure is goal.outside_is_always_worse, op
+  assert seen == set(Goal), "a Goal member no test reaches is a branch nobody checks"
+
+
+def test_a_goal_the_comparison_does_not_handle_is_refused_rather_than_defaulted(monkeypatch):
+  """A fourth direction must reach a refusal, not the two-sided branch by accident."""
+
+  class _Centered(str, enum.Enum):
+    CENTERED = "centered"
+
+    @property
+    def outside_is_always_worse(self) -> bool:
+      return False
+
+  spec = TRANSFERABLE_BY_OP[CLEANUP]
+  monkeypatch.setitem(
+    teaching.TRANSFERABLE_BY_OP, CLEANUP, dataclasses.replace(spec, goal=_Centered.CENTERED)
+  )
+  env = Envelope(
+    operation=CLEANUP,
+    metric=spec.metric,
+    units=spec.units,
+    goal=_Centered.CENTERED,
+    demonstrations=tuple(_demo(v) for v in (0.80, 0.85, 0.90)),
+  )
+  with pytest.raises(ValueError, match="does not handle"):
+    attainment(env, [_obs(v) for v in (0.85, 0.86, 0.87)])
+
+
+# -- a verdict against the machine has to be readable ---------------------------
+
+
+def test_a_machine_below_the_expert_is_readable_in_the_report(monkeypatch):
+  """The only verdict that says the machine performs worse, and it had no accessor at all."""
+  monkeypatch.setattr(teaching, "DEMONSTRATIONS", tuple(_demo(v) for v in (0.80, 0.85, 0.90)))
+  monkeypatch.setattr(teaching, "MACHINE_OBSERVATIONS", tuple(_obs(v) for v in (0.10, 0.12, 0.11)))
+  monkeypatch.setattr(teaching, "ENVELOPES", teaching._build_envelopes())
+  report = teaching.transfer_report([CLEANUP])
+  assert [r.operation for r in report.below()] == [CLEANUP]
+  assert report.counts()["below"] == 1
+  assert not report.transfers()
+
+
+def test_relabelling_the_conditions_cannot_erase_a_verdict_without_trace(monkeypatch):
+  """`conditions` is free text on both sides, so the erasure has to leave a count behind."""
+  monkeypatch.setattr(teaching, "DEMONSTRATIONS", tuple(_demo(v) for v in (0.80, 0.85, 0.90)))
+  monkeypatch.setattr(teaching, "ENVELOPES", teaching._build_envelopes())
+
+  monkeypatch.setattr(teaching, "MACHINE_OBSERVATIONS", tuple(_obs(v) for v in (0.10, 0.12, 0.11)))
+  stated = teaching.transfer_report([CLEANUP]).counts()
+
+  elsewhere = tuple(_obs(v, conditions="a condition nobody demonstrated") for v in (0.10, 0.12, 0.11))
+  monkeypatch.setattr(teaching, "MACHINE_OBSERVATIONS", elsewhere)
+  silenced = teaching.transfer_report([CLEANUP])
+  assert silenced.counts() != stated
+  assert silenced.counts()["discarded_observations"] == 3
+  assert silenced.rows[0].parity.machine_n == 3
+  assert silenced.rows[0].parity.matched_n == 0
+
+
+def test_every_row_lands_in_exactly_one_verdict_bucket():
+  """Buckets that do not sum are buckets with somewhere for a verdict to go missing."""
+  protocol = protocols.get("single_cell_genomics")
+  counts = transfer_report([s.op for s in protocol.steps]).counts()
+  assert (
+    counts["attained"] + counts["below"] + counts["unmeasured"] + counts["unplaceable"]
+    == counts["operations"]
+  )
+
+
+def test_a_met_benchmark_is_not_a_target_nobody_has_hit():
+  """`asserted_only` resolves the STATUS, which is the property `intelligence` draws it with."""
+  for op in ("tray_cycle", "iswap_to_hhs"):
+    row = transfer_report([op]).rows[0]
+    assert row.benchmarks and all(b.status is BenchmarkStatus.MET for b in row.benchmarks)
+    assert not row.asserted_only
+    assert row.met_without_envelope
+  unmet = transfer_report(["read_absorbance"]).rows[0]
+  assert unmet.benchmarks[0].status is BenchmarkStatus.UNMET
+  assert unmet.asserted_only
+
+
+# -- the backlog names what nobody has specified --------------------------------
+
+
+def test_a_protocol_of_operations_nobody_specified_still_produces_a_backlog():
+  """The most untaught operations there are, and the queue used to omit them entirely."""
+  nameless = Protocol(
+    name="unspecified",
+    summary="two operations nobody ever wrote a spec for",
+    steps=(
+      Step(instrument="star", op="an_operation_nobody_ever_wrote_down", summary=""),
+      Step(instrument="star", op="another_undeclared_op", summary=""),
+    ),
+  )
+  queue = demonstration_queue([nameless])
+  assert {u.operation for u in queue.unspecified} == {
+    "an_operation_nobody_ever_wrote_down",
+    "another_undeclared_op",
+  }
+  assert all(u.demonstrations_needed == MIN_DEMONSTRATIONS for u in queue.unspecified)
+  assert queue.operations_considered == 2
+  assert queue.refusal() is None
+  assert queue.cost() == 2 * MIN_DEMONSTRATIONS
+  # The module used to disagree with itself on this exact input.
+  assert {op for op, _why in untaught_operations(nameless)} == {
+    u.operation for u in queue.unspecified
+  }
+
+
+def test_the_queue_accounts_for_every_operation_the_protocol_runs():
+  """Ranked, unspecified, or exempt. Nothing is dropped on the way out of the loop."""
+  protocol = protocols.get("single_cell_genomics")
+  queue = demonstration_queue([protocol])
+  named = (
+    {op for entry in queue for op in entry.operations}
+    | {u.operation for u in queue.unspecified}
+    | set(queue.exempt)
+  )
+  assert named == {s.op for s in protocol.steps}
+  assert queue.operations_considered == len(named)
+  assert queue.unspecified, "a real protocol with nothing unspecified would be suspicious"
+
+
+def test_an_exemption_has_to_say_why_and_cannot_double_as_a_specification():
+  """An exemption removes work from a backlog, so it is the shape of a silencer."""
+  assert EXEMPT
+  for op, why in EXEMPT.items():
+    assert why.strip(), f"'{op}' is exempt and says nothing about why"
+    assert op not in TRANSFERABLE_BY_OP
+    ok, reason = taught(op)
+    assert not ok, f"'{op}' reads as taught because it was exempted"
+    assert "exempt" in reason
+
+
+def test_a_queue_over_a_protocol_with_no_steps_is_not_a_queue_over_no_protocols():
+  """Three states that used to return the same empty list."""
+  stepless = Protocol(name="stepless", summary="", steps=())
+  nothing_handed = demonstration_queue([])
+  nothing_in_it = demonstration_queue([stepless])
+  assert nothing_handed.refusal() is not None
+  assert nothing_in_it.refusal() is not None
+  assert untaught_operations(stepless).refusal() is not None
+  assert untaught_operations(protocols.get("single_cell_genomics")).refusal() is None
+
+
+# -- three entries is not three measurements ------------------------------------
+
+
+def test_one_measurement_recorded_three_times_is_not_three_measurements():
+  """The repo's own last-audit precedent: a duplicate entry defeating a gate."""
+  once = _demo(0.85)
+  spec = TRANSFERABLE_BY_OP[CLEANUP]
+  with pytest.raises(ValueError, match="not two measurements"):
+    Envelope(
+      operation=CLEANUP,
+      metric=spec.metric,
+      units=spec.units,
+      goal=spec.goal,
+      demonstrations=(once, once, once),
+    )
+
+
+def test_one_machine_run_counted_three_times_is_not_three_runs():
+  """The sub-case at the API level: one run repeated cleared a minimum one run cannot."""
+  env = _envelope([0.80, 0.85, 0.90])
+  once = _obs(0.88)
+  assert attainment(env, [once]).attainment is Attainment.INDISTINGUISHABLE_FROM_UNMEASURED
+  with pytest.raises(ValueError, match="one run counted"):
+    attainment(env, [once, once, once])
+
+
+def test_a_range_of_width_zero_over_three_runs_is_refused():
+  """Three independent runs of a continuous quantity do not agree to full precision."""
+  env = _envelope([0.85, 0.85, 0.85])
+  assert env.n() == MIN_DEMONSTRATIONS
+  assert env.tolerance() is None
+  assert env.spread() is None
+  assert "transcribed" in (env.refusal() or "")
+
+
+def test_two_numbers_copied_do_not_certify_a_transfer(monkeypatch):
+  """The end-to-end version. This is the test that catches the whole family."""
+  monkeypatch.setattr(
+    teaching, "DEMONSTRATIONS", tuple(_demo(0.85, evidence=f"page {i}") for i in range(3))
+  )
+  monkeypatch.setattr(
+    teaching, "MACHINE_OBSERVATIONS", tuple(_obs(0.88, evidence=f"run {i}") for i in range(3))
+  )
+  monkeypatch.setattr(teaching, "ENVELOPES", teaching._build_envelopes())
+  report = teaching.transfer_report([CLEANUP])
+  assert not report.transfers()
+  assert report.counts()["attained"] == 0
+  assert report.counts()["with_envelope"] == 0
+  assert not taught(CLEANUP)[0]
+  assert teaching.demonstrations_still_needed(CLEANUP) >= 1
+
+
+def test_the_backlog_never_says_zero_while_the_verdict_says_untaught():
+  """Two numbers a reader puts side by side, and no reader could resolve a disagreement."""
+  for op in list(TRANSFERABLE_BY_OP) + ["an_operation_nobody_ever_wrote_down"]:
+    if not taught(op)[0]:
+      assert demonstrations_still_needed(op) >= 1, op
+
+
+# -- a number with no source, and a number that is not a number -----------------
+
+
+def test_a_demonstration_with_no_evidence_is_refused():
+  """Every sibling module carries a basis or an evidence string. This one has to as well."""
+  spec = TRANSFERABLE_BY_OP[CLEANUP]
+  with pytest.raises(ValueError, match="records no evidence"):
+    Demonstration(
+      operation=CLEANUP,
+      metric=spec.metric,
+      units=spec.units,
+      value=0.85,
+      by="scientist_a",
+      conditions=spec.conditions,
+      evidence="   ",
+    )
+
+
+def test_a_machine_observation_with_no_evidence_is_refused():
+  spec = TRANSFERABLE_BY_OP[CLEANUP]
+  with pytest.raises(ValueError, match="records no evidence"):
+    MachineObservation(
+      operation=CLEANUP,
+      metric=spec.metric,
+      units=spec.units,
+      value=0.88,
+      by="a run card",
+      conditions=spec.conditions,
+      evidence="",
+    )
+
+
+def test_a_run_whose_outcome_could_not_be_measured_is_not_an_observation():
+  """A NaN pads n while being invisible to min and max, and min/max short-circuit on it.
+
+  Untouched, two real demonstrations plus one non-measurement produced the tolerance two
+  real demonstrations alone are refused, and the machine verdict depended on input order.
+  """
+  for bad in (float("nan"), float("inf"), float("-inf")):
+    with pytest.raises(ValueError, match="not an observation of the operation"):
+      _demo(bad)
+    with pytest.raises(ValueError, match="not an observation of the operation"):
+      _obs(bad)
+
+
+def test_every_specified_metric_says_where_the_choice_of_metric_came_from():
+  """A metric choice is a scientific claim, and this package attributes those everywhere."""
+  for spec in TRANSFERABLE:
+    assert isinstance(spec.basis, Basis)
+    assert not spec.basis.validated, (
+      f"'{spec.op}' claims a validated basis for its metric; no titration in this repo "
+      "established that this is the quantity that decides the operation"
+    )
+
+
+# -- a demonstrator handle is an identifier, not free text ----------------------
+
+
+def test_a_trailing_space_does_not_turn_one_person_into_three():
+  """The caveat that must travel with every parity claim, defeated by whitespace."""
+  env = _envelope([0.80, 0.85, 0.90], by=("scientist_a", "Scientist_A", "scientist_a "))
+  assert env.demonstrators() == ("scientist_a",)
+  assert "one person's performance" in (env.caveat() or "")
+  parity = attainment(env, [_obs(v) for v in (0.88, 0.87, 0.91)])
+  assert parity.attainment is Attainment.MEETS
+  assert "Caveat" in parity.reason
+  assert taught(CLEANUP)[0] is False
+
+
+def test_a_demonstration_with_no_handle_at_all_is_refused():
+  with pytest.raises(ValueError, match="records no handle"):
+    _demo(0.85, by="  ")
+
+
+# -- qc owns the quantities it already names ------------------------------------
+
+
+def test_the_sort_metric_is_resolved_from_qc_rather_than_restated():
+  """Two statements of one quantity drift the first time either is edited."""
+  spec = TRANSFERABLE_BY_OP["start_sort"]
+  known = MEASUREMENTS[spec.measurement]
+  assert spec.measurement == "well_occupancy"
+  assert spec.metric == known.note
+  assert spec.units == known.units
+
+
+def test_a_specification_cannot_restate_a_qc_measurement_differently():
+  spec = TRANSFERABLE_BY_OP["start_sort"]
+  with pytest.raises(ValueError, match="qc owns this quantity"):
+    dataclasses.replace(spec, units="percent")
+  with pytest.raises(ValueError, match="qc does not define"):
+    dataclasses.replace(spec, measurement="a_measurement_qc_never_heard_of")
+
+
+def test_the_threshold_a_gate_will_enforce_travels_beside_the_benchmark():
+  """The asserted number with a value on it, and the row used to carry only the one without."""
+  row = transfer_report(["start_sort"]).rows[0]
+  enforced = {c.name for c in row.criteria}
+  assert "enough_wells_occupied" in enforced
+  assert row.criteria[0] is SORT_OCCUPANCY_GATE.criteria[0]
+  assert row.benchmarks  # and intelligence's target, which states no number, is still here
+  assert row.asserted_only
