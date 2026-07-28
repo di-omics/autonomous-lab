@@ -443,7 +443,9 @@ def test_a_stronger_assignment_listed_first_cannot_hide_a_weaker_one():
   violation. A duplicate assignment was exactly such a field: first-match resolution meant
   listing HUMAN before MODEL on batch release reported a clean plan.
   """
-  A = lambda auth: Assignment(decision_class="batch_release", authority=auth, who="x")
+  def A(auth):
+    return Assignment(decision_class="batch_release", authority=auth, who="x")
+
   for order in ((A(Authority.HUMAN), A(Authority.MODEL)), (A(Authority.MODEL), A(Authority.HUMAN))):
     found = [v for v in violations(Plan(name="p", assignments=order)) if v.decision_class == "batch_release"]
     kinds = {v.kind for v in found}
@@ -454,7 +456,9 @@ def test_a_stronger_assignment_listed_first_cannot_hide_a_weaker_one():
 def test_a_duplicated_class_is_reported_rather_than_resolved():
   """Picking a winner would answer 'who decides' on the author's behalf. A plan naming a
   class twice has not decided, and that is the thing to report."""
-  A = lambda auth: Assignment(decision_class="batch_release", authority=auth, who="x")
+  def A(auth):
+    return Assignment(decision_class="batch_release", authority=auth, who="x")
+
   plan = Plan(name="p", assignments=(A(Authority.HUMAN), A(Authority.MODEL)))
   assert plan.assigned("batch_release") is None, "an ambiguous class resolves to nothing"
   assert len(plan.all_assigned("batch_release")) == 2
