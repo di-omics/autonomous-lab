@@ -40,7 +40,7 @@ autonomous-lab knowledge                      # encoded expert judgment and robo
 
 autonomous-lab evidence                       # what the published record shows, and what it does not
 autonomous-lab authority                      # which decisions a model may make, and which need a person
-autonomous-lab cadence 500 --endpoint released --hours 16  # what that target actually costs
+autonomous-lab cadence 500 --endpoint started --hours 16  # what that target actually costs
 ```
 
 ## What it reports today
@@ -331,7 +331,7 @@ is allowed to decide, and what does a stated throughput target actually cost?**
 ```
 autonomous-lab evidence                      # what the record shows -- and what it does not
 autonomous-lab authority                     # which decisions a model may make
-autonomous-lab cadence 500 --endpoint released --hours 16
+autonomous-lab cadence 500 --endpoint started --hours 16
 ```
 
 ### Evidence, scoped rather than cited
@@ -342,8 +342,9 @@ production line. So every entry carries what it **does not establish**, and supp
 resolved by scope rather than by fame.
 
 Fifteen works, each independently verified against the live record before it was encoded --
-**thirteen confirmed, two partial, and eleven carrying figures that could not be
-confirmed**, listed rather than rounded away. The verification changed the content:
+**ten confirmed, five partial, and eleven carrying figures that could not be confirmed**,
+listed rather than rounded away. An entry whose numbers were checked against a preprint
+rather than the version of record is `PARTIAL`, however solid the work is. The verification changed the content:
 
 - The A-Lab paper was **corrected**. Forty-one successes became thirty-six after four were
   reclassified as inconclusive, and the "43 new materials" figure in news coverage matches
@@ -383,7 +384,10 @@ A target is the easiest number in a lab to state and the easiest to state meanin
 `cadence` refuses one until it says what it counts, because plates *started*, *completed*,
 *QC-passed*, and *released* differ by exactly the failure and rerun rate -- a measurement,
 not an assumption. Resolving that silently would pick the loosest reading in the caller's
-favour.
+favour. It refuses twice: a downstream endpoint is a **return** rate, so reaching 500
+released means admitting more than 500, and without a measured survival fraction the module
+will not convert. Dividing the face value would report the *started* interval under a
+*released* label.
 
 Given an endpoint it is pure arithmetic on the caller's inputs, needing no measured
 durations: 500 plates a day is one every **172.8 s** round the clock, or **115.2 s** inside
@@ -558,7 +562,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-277 device-free tests. The ones that matter most try to make the layer lie:
+288 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever

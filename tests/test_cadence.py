@@ -488,3 +488,56 @@ def test_the_constraints_recompute_rather_than_being_stored():
 
 def _forcing(cadence: Cadence, forcing: Forcing):
   return next(i for i in cadence.implied_constraints() if i.forcing is forcing)
+
+
+# -- the negative claim must be behaviour, not a permanently-false constant --------
+
+
+def test_support_would_flip_if_a_sustained_rate_work_ever_appeared():
+  """The module's headline is that nothing cited establishes a sustained rate. Proven only
+  against the current table, that passes just as well for an implementation hard-wired to
+  return nothing -- and it would keep passing after real evidence arrived.
+
+  So inject one and check the behaviour flips. This is the test that makes the claim a
+  computation rather than a constant.
+  """
+  import autonomous_lab.cadence as mod
+
+  planted = mod.Demonstration(
+    **{
+      **{f: getattr(mod.DEMONSTRATIONS[0], f) for f in mod.DEMONSTRATIONS[0].__dataclass_fields__},
+      "key": "planted_sustained_rate",
+      "demonstrated": mod.Demonstrated.SUSTAINED_RATE,
+    }
+  )
+  original = mod.DEMONSTRATIONS
+  try:
+    mod.DEMONSTRATIONS = original + (planted,)
+    assert mod.sustained_rate_demonstrations() == (planted,)
+    support = mod.demonstrated_support(mod.Target(500, mod.Endpoint.STARTED))
+    assert support.supported, "a genuine sustained-rate work must flip the answer to yes"
+    assert planted in support.supporting()
+  finally:
+    mod.DEMONSTRATIONS = original
+
+  # And the table is back, so the standing claim is negative again.
+  assert sustained_rate_demonstrations() == ()
+
+
+def test_a_downstream_target_without_a_measured_yield_is_refused_not_answered():
+  """A released target is a RETURN rate. Dividing its face value returns the STARTED
+  interval under a RELEASED label -- the loosest reading, silently, which is the exact
+  substitution this module refuses one step earlier."""
+  with pytest.raises(ValueError) as err:
+    cadence_for(Target(500, Endpoint.RELEASED))
+  assert "admission rate" in str(err.value)
+
+  # With a measured survival fraction it converts rather than refusing.
+  converted = cadence_for(Target(500, Endpoint.RELEASED), yield_fraction=0.8)
+  assert converted.interval_seconds == pytest.approx(138.24)
+  # Strictly shorter than the naive division, by exactly the failure rate.
+  assert converted.interval_seconds < launch_interval(500, 24)
+
+
+def test_a_started_target_still_needs_no_yield():
+  assert cadence_for(Target(500, Endpoint.STARTED)).interval_seconds == pytest.approx(172.8)

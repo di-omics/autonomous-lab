@@ -416,10 +416,19 @@ class Plan:
   assignments: Tuple[Assignment, ...] = ()
 
   def assigned(self, decision_class: str) -> Optional[Assignment]:
-    for a in self.assignments:
-      if a.decision_class == decision_class:
-        return a
-    return None
+    """The single assignment for a class, or None when there is not exactly one.
+
+    Returns None for a duplicated class rather than the first match. First-match is the
+    natural implementation and it is a hole in the invariant this module exists to enforce:
+    list the strong authority first and a weaker one after it, and the weaker row is never
+    read. `violations()` reports every row, so nothing hides behind an earlier one.
+    """
+    found = self.all_assigned(decision_class)
+    return found[0] if len(found) == 1 else None
+
+  def all_assigned(self, decision_class: str) -> Tuple[Assignment, ...]:
+    """Every assignment naming this class, in the order the plan lists them."""
+    return tuple(a for a in self.assignments if a.decision_class == decision_class)
 
   @property
   def escalation_only(self) -> bool:
@@ -443,6 +452,11 @@ class ViolationKind(str, Enum):
   WEAKENED = "weakened"  # an authority below what the class requires
   UNASSIGNED = "unassigned"  # the class exists and the plan is silent about it
   UNDECLARED = "undeclared"  # the plan places a class this registry does not declare
+  # The plan assigns one class more than once. Reported in its own right rather than
+  # resolved, because every resolution rule picks a winner on the author's behalf and the
+  # ambiguity is the finding: a document that says a person releases the batch and also
+  # that a model does has not decided, and reading either row as the answer invents one.
+  DUPLICATED = "duplicated"
 
 
 @dataclass(frozen=True)
@@ -490,7 +504,28 @@ def violations(
   out: List[Violation] = []
 
   for dc in registry:
-    assignment = plan.assigned(dc.name)
+    rows = plan.all_assigned(dc.name)
+    if len(rows) > 1:
+      weakest = min(rows, key=lambda a: _ORDER.index(a.authority))
+      out.append(
+        Violation(
+          decision_class=dc.name,
+          kind=ViolationKind.DUPLICATED,
+          required=dc.required,
+          assigned=weakest.authority,
+          reason=(
+            f"'{dc.name}' is assigned {len(rows)} times ("
+            + ", ".join(a.authority.value for a in rows)
+            + f"). The plan has not decided who decides '{dc.decides}', and picking one row "
+            "would answer that on the author's behalf. The weakest is reported below on its "
+            "own merits"
+          ),
+          evidence_key=dc.evidence_key,
+        )
+      )
+    assignment = rows[0] if len(rows) == 1 else (
+      min(rows, key=lambda a: _ORDER.index(a.authority)) if rows else None
+    )
     if assignment is None:
       out.append(
         Violation(

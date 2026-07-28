@@ -461,7 +461,19 @@ def _cadence(args) -> int:
     plates_per_day=args.plates_per_day,
     endpoint=Endpoint(args.endpoint.replace("-", "_")),
   )
-  c = cadence_for(target, operating_hours=args.hours, slowest_step_seconds=args.slowest_step)
+  try:
+    c = cadence_for(
+      target,
+      operating_hours=args.hours,
+      slowest_step_seconds=args.slowest_step,
+      yield_fraction=args.yield_fraction,
+    )
+  except ValueError as err:
+    print(f"cadence for {target.plates_per_day:g} plates {target.endpoint.value}/day\n")
+    print("  REFUSED")
+    print(f"  {err}")
+    print("\n  Re-run with --yield-fraction <measured survival>, or --endpoint started.")
+    return 1
   print(f"cadence for {target.plates_per_day:g} plates {target.endpoint.value}/day\n")
   print(
     f"  admission interval    {c.interval_seconds:.1f} s "
@@ -655,6 +667,10 @@ def build_parser() -> argparse.ArgumentParser:
   cd.add_argument("--intervention-rate", dest="intervention_rate", type=float,
                   help="human interventions per plate")
   cd.add_argument("--minutes-per-intervention", dest="minutes_per_intervention", type=float, default=5.0)
+  cd.add_argument("--yield-fraction", dest="yield_fraction", type=float,
+                  help="measured survival from admission to this endpoint; required for "
+                       "completed/qc-passed/released, which are return rates rather than "
+                       "admission rates")
   cd.set_defaults(func=_cadence)
 
   kn = sub.add_parser("knowledge", help="encoded expert judgment and robot benchmarks")

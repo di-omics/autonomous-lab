@@ -142,6 +142,25 @@ class Scope:
   # nothing in this table is entitled to leave it empty.
   human_in_loop: str = ""
 
+  @property
+  def asserts_nothing_comparable(self) -> bool:
+    """True when a claim names no material, no duration, and no operating property.
+
+    Such a claim is not modest, it is unwritten. Every comparison below is gated on the
+    claim asserting something, so an unwritten claim produces zero shortfalls -- and zero
+    shortfalls reads as full support. That is the same defect `qc` guards on the other side
+    of this package, where a gate evaluated against an empty measurement dict passes every
+    criterion vacuously. A missing assertion is not a satisfied one, and the ambition living
+    in `summary` prose is not a thing this module can check.
+    """
+    return (
+      not self.material.strip()
+      and self.continuous_hours is None
+      and not self.sustained
+      and not self.replicated
+      and not self.unattended
+    )
+
 
 @dataclass(frozen=True)
 class Evidence:
@@ -408,7 +427,7 @@ EVIDENCE: Tuple[Evidence, ...] = (
     domain=Domain.CELL_ASSAY,
     kind=EvidenceKind.EMPIRICAL_DEMONSTRATION,
     year=2026,
-    confidence=Confidence.CONFIRMED,
+    confidence=Confidence.PARTIAL,
     shorthand="a 15-hour single-plate yeast run",
     demonstrates=(
       "A general-purpose robotic manipulator automating plate-based cell culture using vision "
@@ -579,7 +598,7 @@ EVIDENCE: Tuple[Evidence, ...] = (
     domain=Domain.IN_VIVO,
     kind=EvidenceKind.EMPIRICAL_DEMONSTRATION,
     year=2023,
-    confidence=Confidence.CONFIRMED,
+    confidence=Confidence.PARTIAL,
     shorthand="a single-mouse home-cage phenotyping study",
     demonstrates=(
       "Automated cognitive testing in the home cage -- T-maze alternation, novel object "
@@ -1074,7 +1093,7 @@ EVIDENCE: Tuple[Evidence, ...] = (
     domain=Domain.SAFETY,
     kind=EvidenceKind.BENCHMARK,
     year=2026,
-    confidence=Confidence.CONFIRMED,
+    confidence=Confidence.PARTIAL,
     shorthand="a text benchmark of 19 models on constructed lab-safety questions",
     demonstrates=(
       "Nineteen models evaluated -- 8 proprietary and 7 open-weight language models plus 4 "
@@ -1233,6 +1252,34 @@ def _shortfalls(evidence: Evidence, scope: Scope) -> Tuple[str, ...]:
       f"{short} is {_KIND_PHRASE[evidence.kind]}, not a demonstration; it does not show a lab "
       "operating, so it cannot evidence an operating claim",
     )
+
+  if scope.asserts_nothing_comparable:
+    return (
+      "the claim names no material, duration, replication or attendance, so there is nothing "
+      f"to compare {short} against. Returning support here would mean an unwritten claim is "
+      "the easiest kind to support, which is backwards. Write the scope out and ask again",
+    )
+
+  # Material is compared before anything else that ran, because a duration gap on the wrong
+  # organism is a rounding error next to the organism. Comparison is exact-match and
+  # deliberately crude: "primary human hepatocytes" and "immortalized human cell line" are
+  # not machine-comparable, and a fuzzy match here would silently decide a transfer question
+  # that is the whole content of the claim. Unequal strings therefore refuse rather than
+  # guess, and say so.
+  if scope.material.strip():
+    claimed = scope.material.strip().lower()
+    demonstrated = demo.material.strip().lower()
+    if not demonstrated:
+      out.append(
+        f"{short} states no material, so nothing in it compares against the claim's "
+        f"{scope.material}"
+      )
+    elif claimed != demonstrated:
+      out.append(
+        f"the claim is about {scope.material}; {short} ran on {demo.material}. Whether a "
+        "result on one transfers to the other is exactly what a demonstration would have to "
+        "show, and nothing in this entry does"
+      )
 
   if scope.sustained and not demo.sustained:
     out.append(

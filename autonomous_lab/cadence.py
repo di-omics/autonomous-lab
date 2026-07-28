@@ -466,6 +466,7 @@ def cadence_for(
   operating_hours: float = 24.0,
   slowest_step_seconds: Optional[float] = None,
   end_to_end_seconds: Optional[float] = None,
+  yield_fraction: Optional[float] = None,
 ) -> Cadence:
   """Convert a stated target into a sustained admission interval.
 
@@ -483,12 +484,28 @@ def cadence_for(
   ):
     if value is not None and value <= 0:
       raise ValueError(f"{name} of {value} is not a duration")
-  staffed = launch_interval(t.plates_per_day, operating_hours)
+  # An interval is an ADMISSION rate, and only STARTED is stated as one. A downstream target
+  # needs more admissions than its face value by exactly the rate at which work fails, so
+  # dividing the face value would return the STARTED interval under a RELEASED label -- the
+  # loosest reading, silently, which is the thing this module refuses one paragraph earlier.
+  # `required_admissions` already returns None rather than assuming a yield of 1.0; the bug
+  # was that this function did not ask it.
+  admissions = required_admissions(t, yield_fraction)
+  if admissions is None:
+    raise ValueError(
+      f"a target of {t.plates_per_day:g} plates {t.endpoint.value}/day is a RETURN rate, not "
+      "an admission rate. Reaching it means admitting more than that, by exactly the fraction "
+      "of work that fails between admission and this endpoint, and no benchmark in this "
+      "package measures it. Pass yield_fraction=<measured survival> to convert, or state the "
+      "target as plates STARTED. Dividing the face value would report the started interval "
+      "under this endpoint's name"
+    )
+  staffed = launch_interval(admissions, operating_hours)
   return Cadence(
     target=t,
     operating_hours=operating_hours,
     interval_seconds=staffed,
-    round_the_clock_seconds=launch_interval(t.plates_per_day, 24.0),
+    round_the_clock_seconds=launch_interval(admissions, 24.0),
     slowest_step_seconds=slowest_step_seconds,
     end_to_end_seconds=end_to_end_seconds,
   )
@@ -757,8 +774,9 @@ DEMONSTRATIONS: Tuple[Demonstration, ...] = (
     domain="inorganic solid-state powder synthesis, one prototype laboratory",
     ran_for="approximately 1.5 years of deployment",
     scale=(
-      "around 3,500 samples processed, with a stated peak of 149 samples on one day "
-      "(9 February 2024)"
+      "around 3,500 samples processed, with a stated peak of 149 samples on a single day. "
+      "The specific date is not restated here: it did not survive checking against the "
+      "paper, and a date is the kind of detail that makes a number look verified"
     ),
     demonstrated=Demonstrated.CAMPAIGN,
     actuates=True,

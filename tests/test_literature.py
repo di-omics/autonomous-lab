@@ -128,13 +128,66 @@ def test_a_scope_that_sits_inside_a_demonstration_reports_as_supported():
   """Guards against the cheapest possible bug: a checker that always answers no."""
   modest = Scope(
     summary="a single ten-hour attended run on one plate of yeast",
-    material="yeast culture in a 96-well plate",
+    material=EVIDENCE_BY_KEY["roboculture"].scope.material,
     continuous_hours=10.0,
   )
   support = support_for(Domain.CELL_ASSAY, modest)
   assert support.supported
   covering = {g.evidence.key for g in support.speaks_to if g.covers}
   assert "roboculture" in covering
+
+
+def test_a_claim_on_different_material_is_refused_even_when_everything_else_fits():
+  """The load-bearing correctness test for scope.
+
+  A ten-hour attended single-plate run is exactly what the cited work did -- on yeast. Ask
+  the same question about primary human cells and every other field still fits, so a
+  checker that ignores material returns a confident yes. That yes contradicts the entry's
+  own does_not_establish, which is the precise failure this module exists to prevent.
+  """
+  hepatocytes = Scope(
+    summary="ten hours of primary human hepatocyte culture",
+    material="primary human hepatocytes",
+    continuous_hours=10.0,
+  )
+  support = support_for(Domain.CELL_ASSAY, hepatocytes)
+  assert not support.supported
+  gap = _gap(support, "roboculture")
+  assert not gap.covers
+  # The refusal must name both materials, so a reader can judge the transfer themselves.
+  assert "primary human hepatocytes" in gap.reason
+  assert EVIDENCE_BY_KEY["roboculture"].scope.material in gap.reason
+
+
+def test_material_comparison_refuses_rather_than_guessing_at_synonyms():
+  """'yeast culture' and 'Saccharomyces cerevisiae culture' are the same thing to a reader
+  and not to a string comparison. Refusing is the correct behaviour: deciding that two
+  material descriptions are equivalent IS the transfer question, and a fuzzy match would
+  answer it silently in the direction of support."""
+  near_synonym = Scope(
+    summary="ten hours of yeast",
+    material="yeast culture in a 96-well plate",
+    continuous_hours=10.0,
+  )
+  assert not support_for(Domain.CELL_ASSAY, near_synonym).supported
+
+
+def test_a_claim_that_asserts_nothing_comparable_is_refused_not_satisfied():
+  """The other half of the same defect. Every comparison is gated on the claim asserting
+  something, so an unwritten claim yields zero shortfalls -- and zero shortfalls reads as
+  full support. That would make an unwritten claim the easiest kind to support, which is
+  backwards, and it is the same vacuous-pass failure `qc` guards against when a gate is
+  evaluated with no measurements at all.
+  """
+  unwritten = Scope(summary="a continuous unattended sustained mammalian production line")
+  assert unwritten.asserts_nothing_comparable
+  support = support_for(Domain.CELL_ASSAY, unwritten)
+  assert not support.supported
+  assert "nothing to compare" in _gap(support, "roboculture").reason
+
+  # Ambition stated in prose is not a scope. Naming one comparable field makes it checkable.
+  written = Scope(summary="same ambition, written down", sustained=True)
+  assert not written.asserts_nothing_comparable
 
 
 def test_the_same_demonstration_fails_the_same_claim_once_unattended_is_asserted():
@@ -435,3 +488,28 @@ def test_summary_adds_up():
   assert s["domains_covered"] == len(Domain)
   assert s["unsupported_claims"] == len(UNSUPPORTED)
   assert s["entries_with_unverified_numbers"] >= s["partial"]
+
+
+# -- confidence must match what verification actually achieved -------------------
+
+
+def test_an_entry_verified_only_against_a_preprint_is_not_confirmed():
+  """`Confidence.CONFIRMED` means every number in `demonstrates` was checked at the cited
+  source. These three were not -- their own `unverified` says so, naming a paywall, a 403,
+  or a figure that appears only in secondary coverage. Marking them CONFIRMED would make
+  the distinction decorative, in the one module whose whole job is to keep it real.
+  """
+  for key in ("roboculture", "labsafety", "smartkage"):
+    entry = EVIDENCE_BY_KEY[key]
+    assert entry.confidence is Confidence.PARTIAL, (
+      f"{key} states figures it could not confirm at the source; it cannot be CONFIRMED"
+    )
+    assert entry.unverified, f"{key} is PARTIAL and must say which figures are unconfirmed"
+
+
+def test_every_partial_entry_names_what_it_could_not_confirm():
+  """PARTIAL with an empty `unverified` is worse than CONFIRMED: it flags doubt and then
+  refuses to say where, which a reader cannot act on."""
+  for e in EVIDENCE:
+    if e.confidence is Confidence.PARTIAL:
+      assert e.unverified, f"{e.key} is PARTIAL but names nothing it could not confirm"

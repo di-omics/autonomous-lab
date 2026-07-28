@@ -433,3 +433,36 @@ def test_nothing_in_a_plan_can_declare_itself_compliant():
   # `complies` is computed from the registry and has no setter, so a plan cannot assert it.
   with pytest.raises(AttributeError):
     plan.complies = True
+
+
+# -- no row may hide behind an earlier one ---------------------------------------
+
+
+def test_a_stronger_assignment_listed_first_cannot_hide_a_weaker_one():
+  """The module's stated invariant is that no field an author can set suppresses a
+  violation. A duplicate assignment was exactly such a field: first-match resolution meant
+  listing HUMAN before MODEL on batch release reported a clean plan.
+  """
+  A = lambda auth: Assignment(decision_class="batch_release", authority=auth, who="x")
+  for order in ((A(Authority.HUMAN), A(Authority.MODEL)), (A(Authority.MODEL), A(Authority.HUMAN))):
+    found = [v for v in violations(Plan(name="p", assignments=order)) if v.decision_class == "batch_release"]
+    kinds = {v.kind for v in found}
+    assert ViolationKind.DUPLICATED in kinds, "the ambiguity itself is a finding"
+    assert ViolationKind.WEAKENED in kinds, "the weaker row must still be judged on its merits"
+
+
+def test_a_duplicated_class_is_reported_rather_than_resolved():
+  """Picking a winner would answer 'who decides' on the author's behalf. A plan naming a
+  class twice has not decided, and that is the thing to report."""
+  A = lambda auth: Assignment(decision_class="batch_release", authority=auth, who="x")
+  plan = Plan(name="p", assignments=(A(Authority.HUMAN), A(Authority.MODEL)))
+  assert plan.assigned("batch_release") is None, "an ambiguous class resolves to nothing"
+  assert len(plan.all_assigned("batch_release")) == 2
+  dup = next(v for v in violations(plan) if v.kind is ViolationKind.DUPLICATED)
+  assert "has not decided" in dup.reason
+
+
+def test_a_single_correct_assignment_is_still_clean():
+  """Guards the fix against overcorrecting into always-fail."""
+  plan = Plan(name="p", assignments=(Assignment(decision_class="batch_release", authority=Authority.HUMAN, who="QA"),))
+  assert not [v for v in violations(plan) if v.decision_class == "batch_release"]
