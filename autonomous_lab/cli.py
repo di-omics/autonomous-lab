@@ -31,7 +31,11 @@ from .intelligence import (
   loop_closure,
   untrusted_ops,
 )
+from .coverage import coverage_report, mandatory_gates
+from .durability import entitlement_summary, untrusted_instruments
+from .feedback import feedback_report
 from .ledger import build_ledger, rank_unlocks
+from .teaching import demonstration_queue, teaching_summary, transfer_report
 from .lineage import MISASSIGNMENT, Separability, lineage_report
 from .model import Verdict
 from .provenance import provenance_report
@@ -380,6 +384,153 @@ def _lineage(args) -> int:
   return 0 if report.verdict.ok else 1
 
 
+def _coverage(args) -> int:
+  """Vision and QC gates composed: would anything catch each failure?"""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  ledger = build_ledger(p, wc)
+  gates = gate_report(p.name, ledger)
+  cap = VisionCapability.none()
+  report = coverage_report(p, ledger, gates, recovery_report(p, gates, cap), cap)
+  c = report.counts()
+
+  print(f"detection coverage for {p.name}\n")
+  print(f"  failure modes            {c['total']}")
+  print(f"  covered                  {c['covered']}  (vision {c['vision']}, gate {c['gate']}, both {c['both']})")
+  print(f"  uncovered                {c['uncovered']}, of which {c['uncovered_destructive']} destroy material")
+  print(f"  closable as it stands    {c['fixable']}  (build the detector, or make the gate fire)")
+  print(f"  needs a new instrument   {c['structural']}\n")
+
+  # FIXABLE covers two different jobs -- a detector nobody built, and a gate whose input
+  # nobody made arrive. Printing them under one heading would tell a reader to point a
+  # camera at a condition no camera resolves, which is the exact error this module exists
+  # to prevent, committed by its own report.
+  fixable = report.fixable()
+  by_vision = [r for r in fixable if r.observable.reachable_by_vision]
+  by_repair = [r for r in fixable if not r.observable.reachable_by_vision]
+
+  if by_vision:
+    print("  A CAMERA WOULD CATCH THESE -- the check is buildable, nobody built it:")
+    for r in by_vision:
+      print(f"    {r.failure.name:34} ({r.observable.value})")
+      if r.vision_reason:
+        print(f"        {r.vision_reason[:96]}")
+    print()
+
+  if by_repair:
+    print("  INVISIBLE, BUT A DECLARED GATE ALREADY READS THEM -- make the gate fire:")
+    for r in by_repair:
+      print(f"    {r.failure.name:34} ({r.observable.value})")
+      if r.gate_reason:
+        print(f"        {r.gate_reason[:96]}")
+    print()
+
+  structural = report.structural()
+  if structural:
+    print("  NO CAMERA REACHES THESE AT ANY CAPABILITY -- they need an assay:")
+    for r in structural:
+      print(f"    {r.failure.name:34} ({r.observable.value})")
+    print()
+
+  demands = mandatory_gates(gates)
+  if demands:
+    print(f"  {len(demands)} MANDATORY GATE(S) -- invisible and destructive, so a gate is the only option:")
+    for d in demands:
+      print(f"    {d.failure.name}")
+      print(f"        {d.reason[:100]}")
+    print()
+
+  print(
+    "  Vision and gates are complementary instruments, not alternatives. Where the photons\n"
+    "  are identical either way, no model resolves it and only an assay does."
+  )
+  return 0 if report.complete() else 1
+
+
+def _durability(args) -> int:
+  """What each instrument is currently entitled to be trusted with."""
+  wc = _workcell(args)
+  s = entitlement_summary(wc)
+  print(f"instrument entitlement for workcell '{wc.name}'\n")
+  for k, v in sorted(s.items()):
+    print(f"  {k:24} {v}")
+  print()
+  rows = untrusted_instruments(wc)
+  if not rows:
+    print("  Every instrument is currently entitled.")
+    return 0
+  print(f"  {len(rows)} instrument(s) not currently entitled:\n")
+  for u in rows:
+    print(f"    {getattr(u, 'instrument', '?')}  [{getattr(getattr(u, 'standing', None), 'value', '?')}]")
+    print(f"        {getattr(u, 'reason', '')[:110]}")
+    restore = getattr(u, "restores_it", "")
+    if restore:
+      print(f"        restores it: {restore[:110]}")
+    print()
+  print(
+    "  An instrument with no service history is not a healthy instrument, it is an\n"
+    "  unmeasured one -- the same convention this package applies to benchmarks."
+  )
+  return 1
+
+
+def _teaching(args) -> int:
+  """What an expert has demonstrated, and what the machine attains against it."""
+  p = protocols.get(args.protocol)
+  ops = sorted({s.op for s in p.steps})
+  report = transfer_report(ops)
+  s = teaching_summary()
+  print(f"expert transfer for {p.name}\n")
+  for k, v in sorted(s.items()):
+    print(f"  {k:32} {v}")
+  print()
+  for row in report.rows:
+    print(f"  {row.operation:34} {row.parity.attainment.value}")
+    print(f"      expert n={row.parity.expert_n}, machine n={row.parity.machine_n}")
+    if row.parity.reason:
+      print(f"      {row.parity.reason[:104]}")
+  queue = demonstration_queue([p])
+  if queue:
+    print("\n  WHAT TO DEMONSTRATE NEXT (ranked by steps unblocked):")
+    for n in queue[:6]:
+      ops = ", ".join(n.operations[:3])
+      print(f"    {n.instrument:16} {n.demonstrations_needed} demo(s) -> unblocks {n.steps_blocked} step(s)")
+      print(f"                     {ops}")
+  print(
+    "\n  A demonstration is data, not authority. One performance is a value with no\n"
+    "  tolerance, and a tolerance invented around it would be a fabricated number."
+  )
+  return 0
+
+
+def _feedback(args) -> int:
+  """Can a control loop on this protocol actually close?"""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  report = feedback_report(p, build_ledger(p, wc))
+  print(f"control loops for {p.name}\n")
+  if not report.rows:
+    print("  No control loop is declared for this protocol.")
+    print("  A protocol with no loop is open-loop by construction, however automated it is.")
+    return 1
+  for row in report.rows:
+    verdict = getattr(getattr(row, "closable", None), "value", "?")
+    print(f"  {getattr(getattr(row, 'loop', None), 'name', '?'):28} {verdict.upper()}")
+    reason = getattr(row, "reason", "")
+    if reason:
+      print(f"      {reason[:110]}")
+    exposure = getattr(row, "in_flight", None)
+    if exposure is not None:
+      print(f"      committed before a correction lands: {exposure}")
+    print()
+  print(
+    "  A sensor downstream of its own actuator is a post-mortem wearing the costume of a\n"
+    "  control loop. This module does not model gain or settling -- that needs a plant\n"
+    "  model and measured response data nothing here has."
+  )
+  return 0 if all(getattr(getattr(r, "closable", None), "value", "") == "closes" for r in report.rows) else 1
+
+
 def _knowledge(args) -> int:
   """The tacit layer: expert judgments and the benchmarks a robot must meet."""
   s = knowledge_summary()
@@ -522,6 +673,25 @@ def build_parser() -> argparse.ArgumentParser:
   ln.add_argument("--datum", default="run_outcome", help="the result to trace back")
   ln.add_argument("--unit", default="cell", help="what the science needs to distinguish")
   ln.set_defaults(func=_lineage)
+
+  cvg = sub.add_parser("coverage", help="would anything catch each failure? vision and gates composed")
+  common(cvg)
+  cvg.add_argument("protocol", nargs="?", default="single_cell_genomics")
+  cvg.set_defaults(func=_coverage)
+
+  dur = sub.add_parser("durability", help="what each instrument is entitled to be trusted with")
+  common(dur)
+  dur.set_defaults(func=_durability)
+
+  tch = sub.add_parser("teaching", help="what an expert demonstrated, and what the machine attains")
+  common(tch)
+  tch.add_argument("protocol", nargs="?", default="single_cell_genomics")
+  tch.set_defaults(func=_teaching)
+
+  fbk = sub.add_parser("feedback", help="can a control loop on this protocol actually close?")
+  common(fbk)
+  fbk.add_argument("protocol", nargs="?", default="single_cell_genomics")
+  fbk.set_defaults(func=_feedback)
 
   kn = sub.add_parser("knowledge", help="encoded expert judgment and robot benchmarks")
   common(kn)

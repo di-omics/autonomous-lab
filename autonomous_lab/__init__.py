@@ -35,9 +35,65 @@ five further layers ask whether the rest hold:
   lineage       which cell a read came from -- and whether pooling already destroyed the
                 answer, which is a different question from whether the plate was tracked.
   intelligence  the tacit expert judgment and the benchmarks a robot must meet first.
+
+Four further layers cover what a workcell needs once more than one instrument is involved
+and the lab has to keep running:
+
+  coverage      vision and QC gates composed. For every failure that destroys material, is
+                there ANYTHING that would catch it? Where a camera is physically incapable,
+                an assay is the only option left, so an invisible failure with no gate is
+                uncovered and no CV budget ever changes that.
+  durability    what an instrument is currently entitled to be trusted with, and whether a
+                planned campaign crosses a service boundary mid-run. Not a failure
+                predictor -- that needs reliability data this package does not have.
+  teaching      an expert demonstrating an operation, and a machine measured against that
+                demonstration. A demonstration is data, not authority: one performance is a
+                value with no tolerance, and saying so is the point.
+  feedback      whether a control loop can actually close. A sensor downstream of its own
+                actuator is a post-mortem wearing the costume of a control loop.
+
+`Envelope` is defined in both `teaching` (what an expert demonstrated) and `feedback` (what
+a loop steers toward). They are related and not the same, so neither is re-exported here --
+import from the module that means the one you want.
 """
 
+from .coverage import (
+  Ceiling,
+  Cover,
+  CoverageReport,
+  CoverageRow,
+  Demand,
+  SotaLift,
+  coverage_report,
+  mandatory_gates,
+  sota_lift,
+  unmet_demands,
+)
+from .durability import (
+  Accrued,
+  BoundaryReport,
+  Campaign,
+  Entitlement,
+  InstrumentHealth,
+  Interval,
+  IntervalKind,
+  ServiceRecord,
+  crosses_boundary,
+  entitlement_summary,
+  untrusted_instruments,
+)
 from .executor import Executor, Handoff, RunReport, StepResult
+from .feedback import (
+  Closable,
+  Closure,
+  Controller,
+  Correction,
+  FeedbackReport,
+  Loop,
+  can_close,
+  feedback_report,
+  in_flight_exposure,
+)
 from .intelligence import (
   Benchmark,
   BenchmarkStatus,
@@ -66,6 +122,20 @@ from .lineage import (
 from .model import Artifact, Protocol, Role, Step, Tier, Transform, Verdict, ZeroDecodeOp
 from .provenance import Attestation, CustodyGap, Event, RunRecord, provenance_report
 from .qc import Basis, Criterion, Decision, Gate, Readiness, evaluate, gate_report
+from .teaching import (
+  Attainment,
+  Demonstration,
+  MachineObservation,
+  NextDemonstration,
+  TransferReport,
+  TransferRow,
+  attainment,
+  demonstration_queue,
+  envelope_for,
+  taught,
+  transfer_report,
+  untaught_operations,
+)
 from .recovery import Detection, FailureMode, Latency, Severity, recovery_report
 from .registry import FEDERATED, FederatedSpec, InstrumentSpec, declared, registry, spec
 from .throughput import Duration, TimeBasis, estimate
@@ -91,27 +161,45 @@ def loop_closure_for(protocol, workcell=None):
 
 
 __all__ = [
+  "Accrued",
   "Artifact",
-  "Cohort",
-  "MISASSIGNMENT",
+  "Attainment",
   "Attestation",
   "Basis",
   "Benchmark",
   "BenchmarkStatus",
+  "BoundaryReport",
+  "Campaign",
+  "Ceiling",
+  "Closable",
+  "Closure",
+  "Cohort",
+  "Controller",
+  "Correction",
+  "Cover",
+  "CoverageReport",
+  "CoverageRow",
   "Criterion",
   "CustodyGap",
   "Decision",
+  "Demand",
+  "Demonstration",
   "Detection",
   "Duration",
+  "Entitlement",
   "Event",
   "Executor",
   "FEDERATED",
   "FailureMode",
   "FederatedSpec",
+  "FeedbackReport",
   "Gate",
   "Handoff",
   "InstrumentConfig",
+  "InstrumentHealth",
   "InstrumentSpec",
+  "Interval",
+  "IntervalKind",
   "Judgment",
   "Latency",
   "Ledger",
@@ -119,22 +207,30 @@ __all__ = [
   "LineageEdge",
   "LineageGraph",
   "LineageReport",
-  "Misassignment",
+  "Loop",
   "LoopClosure",
+  "MISASSIGNMENT",
+  "MachineObservation",
+  "Misassignment",
+  "NextDemonstration",
   "Observable",
   "Protocol",
   "Readiness",
   "Role",
   "RunRecord",
-  "Separability",
   "RunReport",
+  "Separability",
+  "ServiceRecord",
   "Severity",
+  "SotaLift",
   "Step",
   "StepResult",
   "StepVerdict",
   "Tier",
   "TimeBasis",
   "Traceability",
+  "TransferReport",
+  "TransferRow",
   "Transform",
   "UndeclaredTransform",
   "Unlock",
@@ -144,22 +240,38 @@ __all__ = [
   "VisualCheck",
   "Workcell",
   "ZeroDecodeOp",
+  "attainment",
   "build_ledger",
   "build_lineage",
+  "can_close",
   "cost_step",
+  "coverage_report",
+  "crosses_boundary",
   "declared",
+  "demonstration_queue",
+  "entitlement_summary",
+  "envelope_for",
   "estimate",
   "evaluate",
+  "feedback_report",
   "gate_report",
+  "in_flight_exposure",
   "knowledge_summary",
   "lineage_report",
   "loop_closure",
   "loop_closure_for",
+  "mandatory_gates",
   "provenance_report",
   "rank_unlocks",
   "recovery_report",
   "registry",
+  "sota_lift",
   "spec",
+  "taught",
+  "transfer_report",
   "trusted_for",
   "undeclared_transforms",
+  "unmet_demands",
+  "untaught_operations",
+  "untrusted_instruments",
 ]
