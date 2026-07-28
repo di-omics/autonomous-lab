@@ -37,6 +37,10 @@ autonomous-lab throughput single_cell_genomics  # plates/day, or why that number
 autonomous-lab provenance single_cell_genomics  # what could be proven about a run afterwards
 autonomous-lab lineage single_cell_genomics   # which cell did this read come from?
 autonomous-lab knowledge                      # encoded expert judgment and robot benchmarks
+
+autonomous-lab evidence                       # what the published record shows, and what it does not
+autonomous-lab authority                      # which decisions a model may make, and which need a person
+autonomous-lab cadence 500 --endpoint released --hours 16  # what that target actually costs
 ```
 
 ## What it reports today
@@ -318,6 +322,88 @@ adequacy. The STAR's dry motion is validated; its volumetric accuracy at the wor
 has never been measured, and no camera retires that benchmark. It needs a calibration
 experiment.
 
+## Is the ambition supported by anything published?
+
+Every layer above asks what *this* lab can prove. Three more ask a question none of them
+can, because it is not about this lab: **is the plan supported by anything published, who
+is allowed to decide, and what does a stated throughput target actually cost?**
+
+```
+autonomous-lab evidence                      # what the record shows -- and what it does not
+autonomous-lab authority                     # which decisions a model may make
+autonomous-lab cadence 500 --endpoint released --hours 16
+```
+
+### Evidence, scoped rather than cited
+
+Autonomous-lab claims get justified by pointing at famous papers whose scope is far
+narrower than the claim. A materials-synthesis campaign gets cited to justify a cell-assay
+production line. So every entry carries what it **does not establish**, and support is
+resolved by scope rather than by fame.
+
+Fifteen works, each independently verified against the live record before it was encoded --
+**thirteen confirmed, two partial, and eleven carrying figures that could not be
+confirmed**, listed rather than rounded away. The verification changed the content:
+
+- The A-Lab paper was **corrected**. Forty-one successes became thirty-six after four were
+  reclassified as inconclusive, and the "43 new materials" figure in news coverage matches
+  no version of the paper.
+- Assay Guidance Manual chapters carry **no DOI**, so any citation supplying one is wrong.
+- PyLabRobot makes an *architectural assertion* about cross-family simulation. It does not
+  demonstrate it, and the entry says so.
+
+`unsupported_claims()` is the standing list of things **no** cited work establishes. It is
+computed from the table, so it shrinks on its own the day real evidence arrives.
+
+### Authority: which decisions a model may make
+
+"AI-native" gets read as "the model drives the instruments". The benchmark evidence is that
+**no evaluated model exceeded 70% hazard-identification accuracy**, and fluent output is
+not evidence of laboratory safety competence. But the honest position is not that models
+are useless -- it is that decision classes differ.
+
+Thirteen classes across four levels: `MODEL` may decide alone, `MODEL_PROPOSES` needs a
+deterministic check or a human to ratify, `DETERMINISTIC` needs a coded interlock with no
+model in the path, and `HUMAN` needs a named accountable person. **Authority may be
+strengthened and never weakened** -- putting a person on a decision a model could make is a
+cost, and the reverse is the defect `violations()` exists to catch.
+
+Each class states *why* it sits where it does, against a specific published finding. Triage
+sits at `MODEL_PROPOSES` because of a documented case where an unexpected intramolecular
+cyclization carried the same molecular weight as the expected product, was indistinguishable
+by chromatogram or MS, and passed the automated rule -- until a human read the NMR.
+
+The qualification ladder runs simulation -> device acceptance -> integrated dry run ->
+volumetric qualification -> assay transfer -> sustained production. **No rung implies the
+one above it.** A passed simulation qualifies nothing physical.
+
+### Cadence: what a throughput target actually costs
+
+A target is the easiest number in a lab to state and the easiest to state meaninglessly.
+`cadence` refuses one until it says what it counts, because plates *started*, *completed*,
+*QC-passed*, and *released* differ by exactly the failure and rerun rate -- a measurement,
+not an assumption. Resolving that silently would pick the loosest reading in the caller's
+favour.
+
+Given an endpoint it is pure arithmetic on the caller's inputs, needing no measured
+durations: 500 plates a day is one every **172.8 s** round the clock, or **115.2 s** inside
+a sixteen-hour window. The ratio between those is the walk-away penalty, and it depends on
+the clock alone -- not on the target, protocol, or instruments, which is the whole
+quantitative case for closing the steps that need a human.
+
+It then names what the interval forces, and refuses where the input does not exist: a
+buffer depth is a makespan divided by an interval, so it inherits every unmeasured second
+and is reported as not computable rather than estimated. `headroom()` is where "just buy a
+faster robot" dies -- an intervention rate of one per two plates at ten minutes each
+consumes **260%** of a 115.2 s interval, and instrument speed is not in that arithmetic.
+
+And `demonstrated_support()` answers the question everybody skips. No cited system
+establishes integrated multi-domain operation at a production rate: the longest integrated
+campaign in the record is seventeen days in a single domain, and the one system running
+continuously at scale across institutions is a cage sensor that observes rather than
+actuates. That emptiness is **computed from the evidence table**, so it flips the day
+somebody publishes a counterexample rather than staying a stale assertion.
+
 ## The RE queue is computed, not argued about
 
 ```
@@ -472,7 +558,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-149 device-free tests. The ones that matter most try to make the layer lie:
+277 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever

@@ -35,6 +35,20 @@ five further layers ask whether the rest hold:
   lineage       which cell a read came from -- and whether pooling already destroyed the
                 answer, which is a different question from whether the plate was tracked.
   intelligence  the tacit expert judgment and the benchmarks a robot must meet first.
+
+Three further layers ask the question the others cannot, because it is not about this lab
+at all: is the ambition supported by anything published, who is allowed to decide, and what
+does a stated throughput target actually cost?
+
+  literature    what the published record demonstrates -- and, entry by entry, what it
+                explicitly does NOT establish. Scope, not fame, decides whether a paper
+                supports a claim.
+  authority     which decisions a model may make, which need a deterministic interlock, and
+                which need a named accountable human. Authority may be strengthened, never
+                weakened.
+  cadence       a plates-per-day target converted into the admission interval it implies,
+                and refused until it says whether it counts plates started, completed,
+                QC-passed, or released.
 """
 
 from .executor import Executor, Handoff, RunReport, StepResult
@@ -48,7 +62,39 @@ from .intelligence import (
   loop_closure,
   trusted_for,
 )
+from .authority import (
+  Authority,
+  DecisionClass,
+  Plan,
+  QualificationRung,
+  Rung,
+  Violation,
+  qualified_for,
+  violations,
+)
+from .cadence import (
+  Cadence,
+  Demonstration,
+  Endpoint,
+  Target,
+  cadence_for,
+  demonstrated_support,
+  headroom,
+  launch_interval,
+  sustained_rate_demonstrations,
+)
 from .ledger import Ledger, StepVerdict, Unlock, build_ledger, cost_step, rank_unlocks
+from .literature import (
+  EVIDENCE,
+  Confidence,
+  Domain,
+  Evidence,
+  EvidenceKind,
+  Scope,
+  Support,
+  support_for,
+  unsupported_claims,
+)
 from .lineage import (
   MISASSIGNMENT,
   Cohort,
@@ -92,13 +138,23 @@ def loop_closure_for(protocol, workcell=None):
 
 __all__ = [
   "Artifact",
+  "Authority",
+  "Cadence",
   "Cohort",
+  "Confidence",
   "MISASSIGNMENT",
   "Attestation",
   "Basis",
   "Benchmark",
   "BenchmarkStatus",
   "Criterion",
+  "DecisionClass",
+  "Demonstration",
+  "Domain",
+  "EVIDENCE",
+  "Endpoint",
+  "Evidence",
+  "EvidenceKind",
   "CustodyGap",
   "Decision",
   "Detection",
@@ -122,23 +178,30 @@ __all__ = [
   "Misassignment",
   "LoopClosure",
   "Observable",
+  "Plan",
   "Protocol",
+  "QualificationRung",
   "Readiness",
   "Role",
   "RunRecord",
+  "Rung",
+  "Scope",
   "Separability",
   "RunReport",
   "Severity",
   "Step",
   "StepResult",
+  "Support",
   "StepVerdict",
   "Tier",
+  "Target",
   "TimeBasis",
   "Traceability",
   "Transform",
   "UndeclaredTransform",
   "Unlock",
   "Verdict",
+  "Violation",
   "VisionCapability",
   "VisionRequirement",
   "VisualCheck",
@@ -146,20 +209,29 @@ __all__ = [
   "ZeroDecodeOp",
   "build_ledger",
   "build_lineage",
+  "cadence_for",
   "cost_step",
   "declared",
+  "demonstrated_support",
   "estimate",
   "evaluate",
   "gate_report",
+  "headroom",
   "knowledge_summary",
+  "launch_interval",
   "lineage_report",
   "loop_closure",
   "loop_closure_for",
   "provenance_report",
+  "qualified_for",
   "rank_unlocks",
   "recovery_report",
   "registry",
   "spec",
+  "support_for",
+  "sustained_rate_demonstrations",
   "trusted_for",
   "undeclared_transforms",
+  "unsupported_claims",
+  "violations",
 ]
