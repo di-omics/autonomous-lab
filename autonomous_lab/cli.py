@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import textwrap
 from typing import List
 
 from .doctor import (
@@ -31,7 +32,10 @@ from .intelligence import (
   loop_closure,
   untrusted_ops,
 )
+from .authority import DECISION_CLASSES, LADDER, Authority
+from .cadence import Endpoint, Target, cadence_for, demonstrated_support, headroom
 from .ledger import build_ledger, rank_unlocks
+from .literature import EVIDENCE, Confidence, summary as literature_summary, unsupported_claims
 from .lineage import MISASSIGNMENT, Separability, lineage_report
 from .model import Verdict
 from .provenance import provenance_report
@@ -380,6 +384,129 @@ def _lineage(args) -> int:
   return 0 if report.verdict.ok else 1
 
 
+def _evidence(args) -> int:
+  """What the published record actually establishes -- and what it does not."""
+  s = literature_summary()
+  print("published evidence for laboratory autonomy\n")
+  print(f"  works cited                  {s['evidence']}  ({s['confirmed']} confirmed, {s['partial']} partial)")
+  print(f"  carrying unverified numbers  {s['entries_with_unverified_numbers']}")
+  print(f"  domains covered              {s['domains_covered']}\n")
+
+  for e in EVIDENCE:
+    if args.domain and e.domain.value != args.domain:
+      continue
+    mark = "" if e.confidence is Confidence.CONFIRMED else "   [partially verified]"
+    print(f"  {e.key}  ({e.domain.value}, {e.year}){mark}")
+    print(f"      shows      {(e.shorthand or e.demonstrates)[:160]}")
+    print(f"      DOES NOT   {e.does_not_establish[:200]}")
+    if e.unverified:
+      print(f"      unverified {len(e.unverified)} figure(s) could not be confirmed")
+    print(f"      {e.url}")
+    print()
+
+  claims = unsupported_claims()
+  print(f"  {len(claims)} claim(s) NO cited work establishes:\n")
+  for c in claims:
+    print(f"    {c.name}")
+    print(f"        {c.claim}")
+    print(f"        would establish it: {c.would_establish_it}")
+    print()
+  print(
+    "  A paper supports a claim by its SCOPE, not by its fame. A seventeen-day campaign\n"
+    "  and a fifteen-hour single-plate run are real results, and neither is a throughput\n"
+    "  specification."
+  )
+  return 0
+
+
+def _authority(args) -> int:
+  """Which decisions a model may make, and which need an interlock or a person."""
+  print("decision authority\n")
+  for level in (Authority.MODEL, Authority.MODEL_PROPOSES, Authority.DETERMINISTIC, Authority.HUMAN):
+    rows = [d for d in DECISION_CLASSES if d.required is level]
+    if not rows:
+      continue
+    print(f"  {level.value.upper()}")
+    for d in rows:
+      print(f"    {d.name}")
+      print(f"        decides  {d.decides}")
+      print(f"        because  {d.because}")
+      if d.evidence_key:
+        print(f"        evidence {d.evidence_key}")
+    print()
+
+  print("  qualification ladder -- no rung implies the one above it:\n")
+  for r in LADDER:
+    print(f"    {r.rung.value}")
+    print(f"        qualifies  {r.qualifies}")
+    print(f"        does NOT   {r.does_not_qualify}")
+  print(
+    "\n  Authority may be strengthened and never weakened. Putting a person on a decision\n"
+    "  a model could make is a cost; the reverse is the defect this exists to catch."
+  )
+  return 0
+
+
+def _cadence(args) -> int:
+  """What a plates-per-day target actually costs, before anything is bought."""
+  if args.endpoint is None:
+    t = Target(plates_per_day=args.plates_per_day)
+    print(f"cadence for {args.plates_per_day:g} plates/day\n")
+    print("  REFUSED")
+    print(f"  {t.why_ambiguous()}")
+    print("\n  Re-run with --endpoint started|completed|qc-passed|released.")
+    return 1
+
+  target = Target(
+    plates_per_day=args.plates_per_day,
+    endpoint=Endpoint(args.endpoint.replace("-", "_")),
+  )
+  try:
+    c = cadence_for(
+      target,
+      operating_hours=args.hours,
+      slowest_step_seconds=args.slowest_step,
+      yield_fraction=args.yield_fraction,
+    )
+  except ValueError as err:
+    print(f"cadence for {target.plates_per_day:g} plates {target.endpoint.value}/day\n")
+    print("  REFUSED")
+    print(f"  {err}")
+    print("\n  Re-run with --yield-fraction <measured survival>, or --endpoint started.")
+    return 1
+  print(f"cadence for {target.plates_per_day:g} plates {target.endpoint.value}/day\n")
+  print(
+    f"  admission interval    {c.interval_seconds:.1f} s "
+    f"({c.minutes_between_plates:.2f} min) over {c.operating_hours:g} h"
+  )
+  print(f"  round the clock       {c.round_the_clock_seconds:.1f} s")
+  print(f"  walk-away penalty     {c.walk_away_multiplier:.2f}x for not running unattended\n")
+
+  for imp in c.implied_constraints():
+    flag = "  <-- UNACHIEVABLE" if imp.unachievable else ""
+    print(f"  {imp.forcing.value.upper()}{flag}")
+    for line in textwrap.wrap(imp.statement, 84):
+      print(f"      {line}")
+    if imp.arithmetic:
+      print(f"      = {imp.arithmetic}")
+    print()
+
+  if args.intervention_rate is not None:
+    h = headroom(c.interval_seconds, args.intervention_rate, args.minutes_per_intervention)
+    print(
+      f"  HUMAN SHARE  {h.human_seconds_per_plate:.1f} s per plate = "
+      f"{h.consumed_fraction:.0%} of the interval"
+    )
+    if h.consumed_fraction >= 1.0:
+      print("      The target is unreachable at this intervention rate. Instrument speed is")
+      print("      not in this arithmetic; only closing the steps that need a human is.")
+    print()
+
+  print("  PUBLISHED SUPPORT")
+  print(f"      {demonstrated_support(target).reason}")
+  return 0
+
+
 def _knowledge(args) -> int:
   """The tacit layer: expert judgments and the benchmarks a robot must meet."""
   s = knowledge_summary()
@@ -522,6 +649,29 @@ def build_parser() -> argparse.ArgumentParser:
   ln.add_argument("--datum", default="run_outcome", help="the result to trace back")
   ln.add_argument("--unit", default="cell", help="what the science needs to distinguish")
   ln.set_defaults(func=_lineage)
+
+  ev = sub.add_parser("evidence", help="what the published record establishes, and what it does not")
+  ev.add_argument("--domain", help="filter to one domain")
+  ev.set_defaults(func=_evidence)
+
+  au = sub.add_parser("authority", help="which decisions a model may make, and which need a person")
+  au.set_defaults(func=_authority)
+
+  cd = sub.add_parser("cadence", help="what a plates-per-day target actually costs")
+  cd.add_argument("plates_per_day", type=float)
+  cd.add_argument("--endpoint", choices=["started", "completed", "qc-passed", "released"],
+                  help="what the target counts; refused without it")
+  cd.add_argument("--hours", type=float, default=24.0)
+  cd.add_argument("--slowest-step", dest="slowest_step", type=float,
+                  help="seconds of the slowest single step, if measured")
+  cd.add_argument("--intervention-rate", dest="intervention_rate", type=float,
+                  help="human interventions per plate")
+  cd.add_argument("--minutes-per-intervention", dest="minutes_per_intervention", type=float, default=5.0)
+  cd.add_argument("--yield-fraction", dest="yield_fraction", type=float,
+                  help="measured survival from admission to this endpoint; required for "
+                       "completed/qc-passed/released, which are return rates rather than "
+                       "admission rates")
+  cd.set_defaults(func=_cadence)
 
   kn = sub.add_parser("knowledge", help="encoded expert judgment and robot benchmarks")
   common(kn)
