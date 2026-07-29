@@ -37,6 +37,11 @@ autonomous-lab throughput single_cell_genomics  # plates/day, or why that number
 autonomous-lab provenance single_cell_genomics  # what could be proven about a run afterwards
 autonomous-lab lineage single_cell_genomics   # which cell did this read come from?
 autonomous-lab knowledge                      # encoded expert judgment and robot benchmarks
+
+autonomous-lab coverage single_cell_genomics  # would anything catch each failure?
+autonomous-lab durability                     # what each instrument may be trusted with
+autonomous-lab teaching single_cell_genomics  # what an expert demonstrated, what the machine attains
+autonomous-lab feedback single_cell_genomics  # can a control loop actually close?
 ```
 
 ## What it reports today
@@ -318,6 +323,83 @@ adequacy. The STAR's dry motion is validated; its volumetric accuracy at the wor
 has never been measured, and no camera retires that benchmark. It needs a calibration
 experiment.
 
+## Would anything catch it? Vision and gates, composed
+
+Three layers here each hold a third of one answer and never meet. `vision` knows what a
+camera can and can never see. `qc` knows which gates exist and whether they can fire.
+`recovery` knows which failures destroy material. Nobody joined them, so nobody could answer
+the question a lab actually asks: **for every failure that destroys material, is there
+anything at all that would catch it?**
+
+```
+$ autonomous-lab coverage single_cell_genomics
+
+  failure modes            14
+  covered                  0
+  uncovered                14, of which 9 destroy material
+  closable as it stands    7   (build the detector, or make the gate fire)
+  needs a new instrument   7
+```
+
+The composition is the product, because vision and gates are **complementary instruments,
+not alternatives**. Where the photons are identical either way, no model resolves it and
+only an assay does. So the report splits three ways, and each third is a different job:
+
+- **six a camera would catch** -- `bead_pellet_aspirated` among them, the failure the
+  recovery layer already calls the worst silent one. The check is declared and undeployable:
+  missing camera, pose, labels, model, validation. That is a CV project with a known payoff.
+- **one invisible, but a declared gate already reads it** -- `enzyme_activity_lost` sits
+  behind `library_quant_before_flow_cell`, which is unsatisfiable because the reader is
+  broken. No camera is involved. Repair the instrument and the coverage arrives.
+- **seven no camera reaches at any capability** -- these are `mandatory_gates()`. Buying a
+  better model buys nothing against them. They need an assay that does not currently exist
+  in the protocol.
+
+`sota_lift(current, proposed)` prices a model upgrade honestly. It returns both lists, and
+the second is required output: **a report showing only what a capability lifts is a purchase
+justification**, and every purchase justification is correct about the failures it lists and
+silent about the ones that make the purchase insufficient.
+
+Two things it refuses to count as coverage: a vision check that exists but whose
+requirements are unmet, and a gate that exists but cannot be evaluated. Both are the
+vacuous-pass failure in a new costume -- a plan that counts unbuilt detectors and unfirable
+gates reports a lab as covered while material is quietly destroyed.
+
+## Keeping it running, teaching it, and closing the loop
+
+Three further layers cover what a workcell needs once it has to survive contact with a
+calendar.
+
+**`durability`** asks what an instrument is currently *entitled* to be trusted with. It is
+deliberately not a failure predictor -- that needs population reliability data this package
+does not have, and an invented MTBF becomes a specification nobody measured. What it does
+compute is whether a planned campaign **crosses a service or calibration boundary mid-run**,
+which is the insurance question: a plate that started before an expiry and finished after it
+has an ambiguous provenance, and nothing downstream repairs that. An instrument with no
+service history reports as unmeasured rather than healthy, matching how an unbenchmarked
+operation is untrusted by default.
+
+**`teaching`** models the transfer that makes any of this worth doing: an expert
+demonstrating an operation, and a machine measured against that demonstration. The honest
+core is that **a demonstration is data, not authority.** A scientist doing something twice is
+not a specification -- it is two observations with a spread, and the spread is the
+information. So an envelope refuses to produce a tolerance from a single demonstration, and
+a machine with one good run reports as indistinguishable from unmeasured rather than as
+meeting the bar. Most operations have no envelope at all, and that list is the real backlog
+of an automation programme; `demonstration_queue` ranks what an expert should demonstrate
+next by how many operations it unblocks, the same way `unlocks()` ranks decoding work.
+
+**`feedback`** asks whether a control loop can actually close. Each of measure, compare, and
+act has its own way of being fake, and the load-bearing one is latency: **a measurement taken
+after the material is consumed cannot steer anything, however accurate it is.** It is a
+post-mortem wearing the costume of a control loop. So a loop declares where it senses and
+where it corrects, and any loop whose sensor sits downstream of its actuator is refused --
+pure graph reasoning over the protocol, and it kills most proposed closed-loop designs. What
+it will not do is model gain, overshoot, or settling, because that needs a plant model and
+measured response data nothing here has. What it *can* say is how many plates are already in
+flight between sensor and actuator, since every one of them is committed before the
+correction lands.
+
 ## The RE queue is computed, not argued about
 
 ```
@@ -472,7 +554,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-149 device-free tests. The ones that matter most try to make the layer lie:
+351 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever
