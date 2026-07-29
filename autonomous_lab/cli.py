@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import textwrap
 from typing import List
 
 from .doctor import (
@@ -31,6 +32,7 @@ from .intelligence import (
   loop_closure,
   untrusted_ops,
 )
+from .information import information_report
 from .ledger import build_ledger, rank_unlocks
 from .lineage import MISASSIGNMENT, Separability, lineage_report
 from .model import Verdict
@@ -41,6 +43,7 @@ from .registry import FEDERATED, registry
 from .throughput import estimate as throughput_estimate
 from .vision import VisionCapability, gaps as vision_gaps, summarize as vision_summary
 from .workcell import Workcell
+from .worldmodel import unmoved, would_retire_labels
 from . import protocols
 
 
@@ -380,6 +383,82 @@ def _lineage(args) -> int:
   return 0 if report.verdict.ok else 1
 
 
+def _information(args) -> int:
+  """The capstone: what caps information per dollar per cycle, and which layer binds."""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  report = information_report(p, args.datum, args.unit, wc)
+  c = report.counts()
+
+  print(f"information per dollar per cycle for {p.name}\n")
+  refusal = report.per_dollar()
+  print("  NOT COMPUTED")
+  for line in textwrap.wrap(refusal.why_not(), 86):
+    print(f"  {line}")
+  print()
+
+  print(f"  CEILING   {report.ceiling.cap().value.upper()}")
+  for line in textwrap.wrap(report.ceiling.capped_by(), 84):
+    print(f"      {line}")
+  print(f"      distinguishable {args.unit}s {c['distinguishable_units']}")
+  print(f"      decisions per cycle    {c['decisions_per_cycle']} of {c['gates']} gate(s)")
+  print()
+
+  print("  REWORK, priced in cycles")
+  print(f"      caught at the step          {c['rework_one_step']}")
+  print(f"      costs the cycle             {c['rework_one_cycle']}")
+  print(f"      cycle plus the decision     {c['rework_cycle_plus_decision']}")
+  print(f"      never caught, so unbounded  {c['rework_unbounded']}")
+  print()
+
+  print("  BINDING CONSTRAINT, in evaluation order")
+  for row in report.constraint.rows:
+    mark = {"binding": "BINDS ", "clear": "      ", "unresolved": "  ?   "}.get(
+      row.standing.value, "      "
+    )
+    print(f"    {mark} {row.layer.value:16} {row.reason[:70]}")
+  binding = report.constraint.binding()
+  if binding is not None:
+    print(
+      f"\n  The first binding layer is {binding.layer.value}. Nothing downstream of it is "
+      "worth\n  buying until it is relieved, because it caps the cycle regardless."
+    )
+  return 0
+
+
+def _worldmodel(args) -> int:
+  """What a predictive model buys a lab that cannot label its own failures."""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  ledger = build_ledger(p, wc)
+  gates = gate_report(p.name, ledger)
+  recovery = recovery_report(p, gates, VisionCapability.none())
+
+  print("what a world model moves, and what it does not\n")
+  retire = would_retire_labels(recovery)
+  print(f"  checks a label-free approach would unblock   {len(retire)}")
+  for r in retire[:8]:
+    chk = getattr(r, "check", None)
+    print(f"    {getattr(chk, 'name', r)}  (catches {getattr(chk, 'catches', '?')})")
+  print()
+  fixed = unmoved()
+  print(f"  conditions no approach lifts at any capability   {len(fixed)}")
+  for u in fixed[:10]:
+    name = getattr(getattr(u, "failure", None), "name", None) or getattr(u, "name", u)
+    print(f"    {name}")
+  print(
+    "\n  A predictive model attacks the labelled-failure blocker, which is the real one for\n"
+    "  visible checks. It moves the invisible boundary by nothing: identical photons predict\n"
+    "  an identical frame, so the deviation signal is zero for the failure that matters most."
+  )
+  print(
+    "\n  And a deviation says the scene is not what was expected. It does not say what went\n"
+    "  wrong, or that it matters. A detector firing on a sleeve has found something real and\n"
+    "  useless."
+  )
+  return 0
+
+
 def _knowledge(args) -> int:
   """The tacit layer: expert judgments and the benchmarks a robot must meet."""
   s = knowledge_summary()
@@ -522,6 +601,18 @@ def build_parser() -> argparse.ArgumentParser:
   ln.add_argument("--datum", default="run_outcome", help="the result to trace back")
   ln.add_argument("--unit", default="cell", help="what the science needs to distinguish")
   ln.set_defaults(func=_lineage)
+
+  inf = sub.add_parser("information", help="what caps information per dollar per cycle")
+  common(inf)
+  inf.add_argument("protocol", nargs="?", default="single_cell_genomics")
+  inf.add_argument("--datum", default="run_outcome")
+  inf.add_argument("--unit", default="cell")
+  inf.set_defaults(func=_information)
+
+  wm = sub.add_parser("worldmodel", help="what a predictive model buys, and what it never will")
+  common(wm)
+  wm.add_argument("protocol", nargs="?", default="single_cell_genomics")
+  wm.set_defaults(func=_worldmodel)
 
   kn = sub.add_parser("knowledge", help="encoded expert judgment and robot benchmarks")
   common(kn)
