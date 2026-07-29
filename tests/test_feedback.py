@@ -332,7 +332,7 @@ def test_measurement_availability_is_resolved_from_the_ledger_not_asserted():
 
 
 def test_a_broken_instrument_and_an_unwired_one_refuse_alike_and_report_differently():
-  """Wiring plr-tested in changes the reason and not the verdict.
+  """Wiring a plr-tested checkout in changes the reason and not the verdict.
 
   Both are UNAVAILABLE_MEASUREMENT because in both cases no number arrives. The reason is
   carried through from the ledger because the next action differs completely: one is a
@@ -343,7 +343,7 @@ def test_a_broken_instrument_and_an_unwired_one_refuse_alike_and_report_differen
 
   unwired = build_ledger(protocol)
   wired_wc = Workcell.default()
-  wired_wc.plr_tested_root = "/nonexistent/plr-tested"
+  wired_wc.plr_tested_root = "/nonexistent/run-cards"
   wired = build_ledger(protocol, wired_wc)
 
   reader = next(i for i, s in enumerate(protocol.steps) if s.op == "read_absorbance")

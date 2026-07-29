@@ -47,13 +47,13 @@ autonomous-lab feedback single_cell_genomics  # can a control loop actually clos
 ## What it reports today
 
 Costing the single-cell genomics reference protocol (Namocell sort -> STAR whole-genome sequencing ->
-ODTC PCR1 -> STAR library -> AVITI sequencing -> run-folder readout), with a plr-tested
-checkout wired in via `--plr-tested`:
+ODTC PCR1 -> STAR library -> AVITI sequencing -> run-folder readout), with a run-card
+checkout wired in via `--run-cards`:
 
 | | steps | |
 | --- | --- | --- |
 | automated | 3 of 18 | run headless today: two link preflights and the AVITI run-folder read |
-| supervised | 2 of 18 | a validated run card exists in plr-tested, gated on a confirm token and an operator |
+| supervised | 2 of 18 | a validated run card exists in the checkout, gated on a confirm token and an operator |
 | blocked | 8 of 18 | the command is undecoded; the coverage gate refuses the run |
 | manual | 4 of 18 | seating a cartridge, loading a flow cell, and two STAR steps nobody has written a validated script for |
 | broken | 1 of 18 | the run card exists, was run on the instrument, and failed |
@@ -442,6 +442,54 @@ gravimetric protocol that would produce one instead. An unmeasured fixture is a 
 of a crash surface, a cleaning obligation, and an uncharacterized material to a workcell
 that had none of them.
 
+## From a video to an arm that can be trusted
+
+The camera layer, the arm, and the printed fixture had nothing joining them. `imitation`
+is the join: capture a demonstration, train an arm from it, and use a printed fixture to
+make the task tractable. It computes whether a given capture can train a policy at all, and
+whether the resulting policy may be handed material.
+
+Three things carry it, and each is where the naive version fails.
+
+**A video is not a demonstration.** A policy needs actions, not pixels. Teleoperation and
+kinesthetic capture record the arm's own joint states, so the action stream is measured. A
+monocular human video has no joint states: it needs pose estimation and then a retargeting
+model onto a gripper with different kinematics, which is two estimators in series rather
+than a format conversion. No verified millimetre figure for human-to-robot retargeting error
+was found at all. The two published magnitudes belong to the hand-pose stage alone, at
+185.67 mm mean per-joint error for one monocular estimator, so an unmeasured retargeting is
+not a small unknown.
+
+**The fixture is inside what the policy learned.** A printed nest removes degrees of freedom
+the policy would otherwise learn from data, which is why fixtures and learning belong in one
+story. It cuts both ways: reprint that nest with different shrinkage and the demonstrations
+collected against the old one may be stale. So a policy carries the fixture revision it
+learned on, and a capture that recorded no fixture at all does not count as agreeing with
+one that did. The part was physically there whether or not anybody wrote it down.
+
+**A properly run evaluation is not a good result.** This is the distinction the module got
+wrong first and now enforces hardest. `Trust.MEASURED` means the evaluation was conducted
+correctly: held out, externally scored, above the trial floor. It says nothing about whether
+the policy works, and a policy that succeeded in **zero of twenty** held-out trials is
+MEASURED. So `evidence_complete` and `trusted` are separate, and `trusted` additionally
+requires a **declared acceptance rate that the interval's lower bound clears**. There is no
+default rate, because what is tolerable is a property of the task: a failure rate a retry
+fixes is not a failure rate for a transfer that consumes the last of a sample. Judging on
+the lower bound rather than the point estimate is what makes 18 of 20 fail an 80 percent
+bar that 90 of 100 clears, at the same point estimate.
+
+A run needs a fourth thing none of those provide: a bound that lives **outside** the policy.
+A learned policy carries no guarantee about an input it has not seen, so the limit on what
+it can reach, how fast and how hard cannot come from the policy or from a model checking the
+policy. `Interlock` demands workspace, speed and force bounds, something named as enforcing
+them, and -- following `vision`'s rule for detectors -- a **measured miss rate**, obtained by
+deliberately driving the violation rather than by observing that nothing went wrong.
+
+`docs/CAPTURE_TO_POLICY.md` is the practical side: which capture modality to choose and why
+that single decision determines how much of the rest is solved work, what a usable capture
+contains, where the printed fixture earns its place, and the ladder from simulation to
+material where no rung implies the one above it.
+
 ## The RE queue is computed, not argued about
 
 ```
@@ -532,12 +580,13 @@ narrow and carry their own caveats.
 
 ## Three things it refuses to do
 
-1. **Let an instrument's reputation transfer to a step.** plr-tested has a validated
-   whole-genome sequencing preparation addition and a validated PCR enrichment choreography; it has no validated bead cleanup
-   and no validated library pooling. So those cost out as manual even though they name a
-   validated instrument. A federated step is supervised only when a run card for *that
-   step* has been proven. The whole-genome sequencing leg that does count is dry-validated, and the ledger
-   says so in the same breath: its wet form has never run.
+1. **Let an instrument's reputation transfer to a step.** The proven run cards are a
+   whole-genome sequencing preparation addition and a PCR enrichment choreography; there
+   is no validated bead cleanup and no validated library pooling. So those cost out as
+   manual even though they name a validated instrument. A federated step is supervised
+   only when a run card for *that step* has been proven. The whole-genome sequencing leg
+   that does count is dry-validated, and the ledger says so in the same breath: its wet
+   form has never run.
 2. **Model only part of what would refuse a run.** `GuardedReplayer.setup()` has three
    preconditions, not one: coverage, an endpoint, and a transport a connection class can
    open. `DEFAULT_TRANSPORT` is UNKNOWN for three of these instruments by design, so a
@@ -585,10 +634,11 @@ and there is no flag that moves an instrument. Anything that does goes through p
 controllers, behind their own `armed` and `allow_actuation` switches, with a human
 present.
 
-Note also plr-tested's hard constraint, which any scheduler built on this must respect:
-one driver process per instrument. Two STAR clients raise `USBError [Errno 16] Resource
-busy`, and on the ODTC the collision is quieter, because a second process re-registers the
-event receiver and silently steals the first one's callbacks.
+Note also the hard constraint the instruments impose, which any scheduler built on this
+must respect: one driver process per instrument. Two STAR clients raise
+`USBError [Errno 16] Resource busy`, and on the ODTC the collision is quieter, because a
+second process re-registers the event receiver and silently steals the first one's
+callbacks.
 
 ## Tests
 
@@ -596,7 +646,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-418 device-free tests. The ones that matter most try to make the layer lie:
+477 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever
