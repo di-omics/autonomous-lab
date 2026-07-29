@@ -47,13 +47,13 @@ autonomous-lab feedback single_cell_genomics  # can a control loop actually clos
 ## What it reports today
 
 Costing the single-cell genomics reference protocol (Namocell sort -> STAR whole-genome sequencing ->
-ODTC PCR1 -> STAR library -> AVITI sequencing -> run-folder readout), with a plr-tested
-checkout wired in via `--plr-tested`:
+ODTC PCR1 -> STAR library -> AVITI sequencing -> run-folder readout), with a run-card
+checkout wired in via `--run-cards`:
 
 | | steps | |
 | --- | --- | --- |
 | automated | 3 of 18 | run headless today: two link preflights and the AVITI run-folder read |
-| supervised | 2 of 18 | a validated run card exists in plr-tested, gated on a confirm token and an operator |
+| supervised | 2 of 18 | a validated run card exists in the checkout, gated on a confirm token and an operator |
 | blocked | 8 of 18 | the command is undecoded; the coverage gate refuses the run |
 | manual | 4 of 18 | seating a cartridge, loading a flow cell, and two STAR steps nobody has written a validated script for |
 | broken | 1 of 18 | the run card exists, was run on the instrument, and failed |
@@ -400,6 +400,96 @@ measured response data nothing here has. What it *can* say is how many plates ar
 flight between sensor and actuator, since every one of them is committed before the
 correction lands.
 
+## Printing the fixture instead of waiting for it
+
+This portfolio's argument is that a lab does not need a vendor to ship AI-native labware.
+That argument is only honest if a part you printed yourself is held to the same standard as
+everything else here -- and a printed fixture is untested hardware, made in-house, sitting
+inside the working envelope of a moving robot, sometimes near reagents.
+
+`printed` computes whether a specific part may be used for a specific purpose. The load-
+bearing boundary is physical rather than regulatory: **fused-deposition parts were measured
+by computed tomography at 4.05 to 6.32 percent porosity with infill fixed at 100 percent.**
+A part that porous cannot be validated as cleanable, so it does not go in a fluid path, and
+no amount of coating or annealing is accepted here as having fixed that -- post-processing
+is recorded as a claim, not a solution.
+
+The consequences fall out rather than being asserted. Of the materials described here, only
+a certified biocompatible photopolymer reaches culture contact, and only that plus machined
+stock reach sample contact. Everything printable holds things; nothing printable holds
+liquid. A blank fixture is refused for every use, because the failure this module exists to
+prevent is a part that passes by virtue of having nothing declared about it.
+
+Four refusals are worth naming, because each is a real way a printed part fails on a deck:
+
+- **`porous_process_in_fluid_path`** -- the boundary above.
+- **`softens_in_the_cycle`** -- PETG's glass transition is 69-77 C, so a 121 C autoclave
+  cycle relaxes its frozen-in extrusion stresses. The part comes out the wrong shape.
+- **`not_positively_located`** -- an unlocated fixture is a crash waiting for the first
+  knock. It needs no operator error to move, and once it has moved every taught position
+  that references it is wrong with nothing reporting that anything changed.
+- **`dimension_not_measured`** -- a designed dimension is a fact about the model. Desktop
+  tolerance runs about +/-0.5 percent with a +/-0.5 mm floor and scales with length,
+  shrinkage is material and vendor specific, and the first layer comes out wider than the
+  model by roughly the 0.2 mm a slicer compensates by default.
+
+`hardware/tilt_module.scad` is the worked example: a passive fixed-angle tilt fixture that
+pools residual liquid at one side of each well so a tip can reach more of it. No hinge and
+no adjustment, because an adjustable angle is an angle nobody records. It defaults to
+printing the **test coupon** rather than the fixture, so the fit is proven before hours are
+committed. And it states no recovery figure anywhere -- `docs/PRINTED_FIXTURES.md` gives the
+gravimetric protocol that would produce one instead. An unmeasured fixture is a net addition
+of a crash surface, a cleaning obligation, and an uncharacterized material to a workcell
+that had none of them.
+
+## From a video to an arm that can be trusted
+
+The camera layer, the arm, and the printed fixture had nothing joining them. `imitation`
+is the join: capture a demonstration, train an arm from it, and use a printed fixture to
+make the task tractable. It computes whether a given capture can train a policy at all, and
+whether the resulting policy may be handed material.
+
+Three things carry it, and each is where the naive version fails.
+
+**A video is not a demonstration.** A policy needs actions, not pixels. Teleoperation and
+kinesthetic capture record the arm's own joint states, so the action stream is measured. A
+monocular human video has no joint states: it needs pose estimation and then a retargeting
+model onto a gripper with different kinematics, which is two estimators in series rather
+than a format conversion. No verified millimetre figure for human-to-robot retargeting error
+was found at all. The two published magnitudes belong to the hand-pose stage alone, at
+185.67 mm mean per-joint error for one monocular estimator, so an unmeasured retargeting is
+not a small unknown.
+
+**The fixture is inside what the policy learned.** A printed nest removes degrees of freedom
+the policy would otherwise learn from data, which is why fixtures and learning belong in one
+story. It cuts both ways: reprint that nest with different shrinkage and the demonstrations
+collected against the old one may be stale. So a policy carries the fixture revision it
+learned on, and a capture that recorded no fixture at all does not count as agreeing with
+one that did. The part was physically there whether or not anybody wrote it down.
+
+**A properly run evaluation is not a good result.** This is the distinction the module got
+wrong first and now enforces hardest. `Trust.MEASURED` means the evaluation was conducted
+correctly: held out, externally scored, above the trial floor. It says nothing about whether
+the policy works, and a policy that succeeded in **zero of twenty** held-out trials is
+MEASURED. So `evidence_complete` and `trusted` are separate, and `trusted` additionally
+requires a **declared acceptance rate that the interval's lower bound clears**. There is no
+default rate, because what is tolerable is a property of the task: a failure rate a retry
+fixes is not a failure rate for a transfer that consumes the last of a sample. Judging on
+the lower bound rather than the point estimate is what makes 18 of 20 fail an 80 percent
+bar that 90 of 100 clears, at the same point estimate.
+
+A run needs a fourth thing none of those provide: a bound that lives **outside** the policy.
+A learned policy carries no guarantee about an input it has not seen, so the limit on what
+it can reach, how fast and how hard cannot come from the policy or from a model checking the
+policy. `Interlock` demands workspace, speed and force bounds, something named as enforcing
+them, and -- following `vision`'s rule for detectors -- a **measured miss rate**, obtained by
+deliberately driving the violation rather than by observing that nothing went wrong.
+
+`docs/CAPTURE_TO_POLICY.md` is the practical side: which capture modality to choose and why
+that single decision determines how much of the rest is solved work, what a usable capture
+contains, where the printed fixture earns its place, and the ladder from simulation to
+material where no rung implies the one above it.
+
 ## The RE queue is computed, not argued about
 
 ```
@@ -490,12 +580,13 @@ narrow and carry their own caveats.
 
 ## Three things it refuses to do
 
-1. **Let an instrument's reputation transfer to a step.** plr-tested has a validated
-   whole-genome sequencing preparation addition and a validated PCR enrichment choreography; it has no validated bead cleanup
-   and no validated library pooling. So those cost out as manual even though they name a
-   validated instrument. A federated step is supervised only when a run card for *that
-   step* has been proven. The whole-genome sequencing leg that does count is dry-validated, and the ledger
-   says so in the same breath: its wet form has never run.
+1. **Let an instrument's reputation transfer to a step.** The proven run cards are a
+   whole-genome sequencing preparation addition and a PCR enrichment choreography; there
+   is no validated bead cleanup and no validated library pooling. So those cost out as
+   manual even though they name a validated instrument. A federated step is supervised
+   only when a run card for *that step* has been proven. The whole-genome sequencing leg
+   that does count is dry-validated, and the ledger says so in the same breath: its wet
+   form has never run.
 2. **Model only part of what would refuse a run.** `GuardedReplayer.setup()` has three
    preconditions, not one: coverage, an endpoint, and a transport a connection class can
    open. `DEFAULT_TRANSPORT` is UNKNOWN for three of these instruments by design, so a
@@ -543,10 +634,11 @@ and there is no flag that moves an instrument. Anything that does goes through p
 controllers, behind their own `armed` and `allow_actuation` switches, with a human
 present.
 
-Note also plr-tested's hard constraint, which any scheduler built on this must respect:
-one driver process per instrument. Two STAR clients raise `USBError [Errno 16] Resource
-busy`, and on the ODTC the collision is quieter, because a second process re-registers the
-event receiver and silently steals the first one's callbacks.
+Note also the hard constraint the instruments impose, which any scheduler built on this
+must respect: one driver process per instrument. Two STAR clients raise
+`USBError [Errno 16] Resource busy`, and on the ODTC the collision is quieter, because a
+second process re-registers the event receiver and silently steals the first one's
+callbacks.
 
 ## Tests
 
@@ -554,7 +646,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-351 device-free tests. The ones that matter most try to make the layer lie:
+477 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever

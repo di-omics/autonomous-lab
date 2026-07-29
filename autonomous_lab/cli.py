@@ -77,7 +77,7 @@ def _stock(args) -> int:
       print("    controller   none in plr-re")
     if s.note:
       print(f"    note         {s.note}")
-  print("\nfederated instruments (driven from di-omics/plr-tested):")
+  print("\nfederated instruments (di-omics/plr-tested):")
   for key in sorted(FEDERATED):
     f = FEDERATED[key]
     wired = "wired" if (key in wc.federated and wc.plr_tested_root) else "not wired"
