@@ -36,6 +36,7 @@ autonomous-lab vision                         # what a camera catches; what none
 autonomous-lab throughput single_cell_genomics  # plates/day, or why that number does not exist
 autonomous-lab provenance single_cell_genomics  # what could be proven about a run afterwards
 autonomous-lab lineage single_cell_genomics   # which cell did this read come from?
+autonomous-lab schedule single_cell_genomics --plates 10  # what serializes across a workcell?
 autonomous-lab knowledge                      # encoded expert judgment and robot benchmarks
 ```
 
@@ -224,6 +225,51 @@ instruments a human carries the plate, no instrument observes the transfer, and 
 between the plate now on the deck and the record describing it rests on the human having
 carried the right one. Software cannot close that by being careful. A barcode read at both
 ends can, or an arm that reports the move.
+
+### More than one plate: what serializes, and what an arm actually buys
+
+Every layer above costs a **single** run. A workcell exists because one plate at a time
+wastes the instruments, and the second plate introduces constraints a single-run report
+cannot see.
+
+```
+$ autonomous-lab schedule single_cell_genomics --plates 10
+
+  serialization point   namocell  (7 of 18 steps, 39%)
+                        70 sequential operations for 10 plates
+  unattended run gets   1 of 18 step(s) in
+
+  CYCLE TIME NOT COMPUTABLE
+
+  22 stall(s):  decode 8   attended 7   handoff 5   gate 2
+
+  A PLATE-MOVING ARM would clear 5 stall(s) and leave 17.
+```
+
+The design constraint is that **none of this uses durations**. `throughput` refuses a
+plates-per-day number because 18 of 18 steps are untimed, and adding plates makes that
+refusal stronger rather than weaker -- a pipelined estimate compounds every unmeasured
+duration in it. But most of what a workcell planner needs is structural, not temporal.
+*Which instrument serializes* is the one that appears in the most steps; that is true at
+any speed, needs no stopwatch, and names which box to buy a second of.
+
+Stalls are **classified rather than collapsed**, because five constraints stop a run and
+each is cleared by a different budget: `decode` is reverse-engineering, `handoff` is a
+plate mover or a barcode, `gate` is an instrument that returns a usable number, `trust` is
+a calibration experiment, and `attended` is the one no purchase fixes.
+
+`arm_relief()` is the computation this repo did not have anywhere. "Buy a plate mover" is
+the reflex answer to a stalling schedule, and here it is **wrong**: an arm clears 5 of 22
+stalls and none of the 8 undecoded commands. It carries plates and reports the move, which
+is the one thing that closes a custody gap -- and it decodes nothing, makes no broken reader
+return a number, and runs no calibration. Which purchase helps is computable before the
+order rather than after it.
+
+`trust` is scoped to where it actually binds. Almost nothing here has a met benchmark, so
+flagging every step would bury the other four classes; and a USB enumeration moves nothing,
+so no robot benchmark gates it. It fires only where the machine **can** act and has not
+earned the right to -- which, with plr-tested wired in, is exactly the two steps that run on
+real hardware under supervision.
 
 ### Sample identity: which cell the read came from
 
@@ -472,7 +518,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-149 device-free tests. The ones that matter most try to make the layer lie:
+160 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever
@@ -488,6 +534,8 @@ pip install -e '.[dev]' && pytest
 - treat an unbenchmarked operation as trusted.
 - report an intact sample chain through a pooling step that destroyed attribution, or
   claim a pooled absorbance reading says something about one well.
+- return a workcell cycle time over steps nobody timed, or report a plate-moving arm as
+  clearing a stall that is really an undecoded command.
 
 Two tests exist to keep the honesty from drifting quietly. One asserts that even a fully
 equipped workcell -- every camera, every calibration, every model -- still leaves

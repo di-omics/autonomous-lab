@@ -33,6 +33,7 @@ from .intelligence import (
 )
 from .ledger import build_ledger, rank_unlocks
 from .lineage import MISASSIGNMENT, Separability, lineage_report
+from .orchestrate import orchestrate
 from .model import Verdict
 from .provenance import provenance_report
 from .qc import MEASUREMENTS, gate_report
@@ -380,6 +381,51 @@ def _lineage(args) -> int:
   return 0 if report.verdict.ok else 1
 
 
+def _orchestrate(args) -> int:
+  """More than one plate at once: what serializes, and where it stops."""
+  wc = _workcell(args)
+  p = protocols.get(args.protocol)
+  ledger = build_ledger(p, wc)
+  sched = orchestrate(
+    p, ledger, gate_report(p.name, ledger), plates=args.plates, untrusted=untrusted_ops(p)
+  )
+
+  print(f"workcell schedule for {p.name}, {sched.plates} plate(s)\n")
+  b = sched.bottleneck
+  if b is not None:
+    print(f"  serialization point   {b.instrument}  ({b.steps} of {len(p.steps)} steps, {b.share:.0%})")
+    print(f"                        {b.serialized_slots(sched.plates)} sequential operations for {sched.plates} plates")
+  print(f"  unattended run gets   {sched.unattended_steps} of {len(p.steps)} step(s) in")
+  print(f"  plates in flight      {sched.pipeline_depth} (distinct instruments before it stops)\n")
+
+  print("  CYCLE TIME NOT COMPUTABLE")
+  print(f"  {sched.why_no_makespan()}\n")
+
+  counts = sched.by_constraint()
+  print(f"  {len(sched.stalls)} stall(s), by what it would take to clear them:")
+  for kind, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+    print(f"    {kind:9} {n}")
+
+  first = sched.first_stall()
+  if first is not None:
+    print(f"\n  STOPS AT  {first.step_op} on {first.instrument}  [{first.constraint.value}]")
+    print(f"      {first.detail}")
+    print(f"      clears it: {first.clears_it}")
+
+  removed, remains = sched.arm_relief()
+  print(f"\n  A PLATE-MOVING ARM would clear {len(removed)} stall(s) and leave {len(remains)}.")
+  for st in removed:
+    print(f"    cleared   {st.step_op}: {st.detail}")
+  if remains:
+    worst = remains[0]
+    print(
+      f"    remains   {worst.step_op} [{worst.constraint.value}] and {len(remains) - 1} more."
+      f"\n              An arm carries plates. It decodes no command sets, makes no broken"
+      "\n              reader return a number, and runs no calibration."
+    )
+  return 0 if sched.runs_unattended else 1
+
+
 def _knowledge(args) -> int:
   """The tacit layer: expert judgments and the benchmarks a robot must meet."""
   s = knowledge_summary()
@@ -522,6 +568,12 @@ def build_parser() -> argparse.ArgumentParser:
   ln.add_argument("--datum", default="run_outcome", help="the result to trace back")
   ln.add_argument("--unit", default="cell", help="what the science needs to distinguish")
   ln.set_defaults(func=_lineage)
+
+  oc = sub.add_parser("schedule", help="run more than one plate: what serializes and where it stops")
+  common(oc)
+  oc.add_argument("protocol", nargs="?", default="single_cell_genomics")
+  oc.add_argument("--plates", type=int, default=10, help="how many plates to push through")
+  oc.set_defaults(func=_orchestrate)
 
   kn = sub.add_parser("knowledge", help="encoded expert judgment and robot benchmarks")
   common(kn)

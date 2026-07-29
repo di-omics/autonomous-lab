@@ -34,6 +34,8 @@ five further layers ask whether the rest hold:
   provenance    a tamper-evident run record, and where the custody chain breaks.
   lineage       which cell a read came from -- and whether pooling already destroyed the
                 answer, which is a different question from whether the plate was tracked.
+  orchestrate   more than one plate at once: what serializes, where it stalls and on which
+                of five constraints, and what a plate-moving arm would actually buy.
   intelligence  the tacit expert judgment and the benchmarks a robot must meet first.
 """
 
@@ -64,6 +66,7 @@ from .lineage import (
   undeclared_transforms,
 )
 from .model import Artifact, Protocol, Role, Step, Tier, Transform, Verdict, ZeroDecodeOp
+from .orchestrate import Constraint, Contention, Schedule, Stall, contention, orchestrate
 from .provenance import Attestation, CustodyGap, Event, RunRecord, provenance_report
 from .qc import Basis, Criterion, Decision, Gate, Readiness, evaluate, gate_report
 from .recovery import Detection, FailureMode, Latency, Severity, recovery_report
@@ -98,6 +101,8 @@ __all__ = [
   "Basis",
   "Benchmark",
   "BenchmarkStatus",
+  "Constraint",
+  "Contention",
   "Criterion",
   "CustodyGap",
   "Decision",
@@ -126,7 +131,9 @@ __all__ = [
   "Readiness",
   "Role",
   "RunRecord",
+  "Schedule",
   "Separability",
+  "Stall",
   "RunReport",
   "Severity",
   "Step",
@@ -146,6 +153,7 @@ __all__ = [
   "ZeroDecodeOp",
   "build_ledger",
   "build_lineage",
+  "contention",
   "cost_step",
   "declared",
   "estimate",
@@ -155,6 +163,7 @@ __all__ = [
   "lineage_report",
   "loop_closure",
   "loop_closure_for",
+  "orchestrate",
   "provenance_report",
   "rank_unlocks",
   "recovery_report",
