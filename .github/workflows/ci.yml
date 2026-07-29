@@ -42,6 +42,12 @@ jobs:
           autonomous-lab ledger single_cell_genomics || [ $? -eq 1 ]
           autonomous-lab gaps || [ $? -eq 1 ]
           autonomous-lab knowledge
+          # Exits 0 and is asserted as such: the manifest ships in this repo, so the
+          # federated status claims are checkable here with no checkout. What this run
+          # catches is registry.py drifting from the committed manifest. It cannot catch
+          # the manifest drifting from the instrument: refreshing the copy is a manual
+          # step, and no runner can see the tree it came from.
+          autonomous-lab doctor
           # Each of these exits 1 because the lab cannot yet do the thing it reports on.
           # That is the correct exit code and it is asserted rather than tolerated: if one
           # of them ever exits 0, either the lab genuinely improved or a report started
@@ -52,6 +58,27 @@ jobs:
           autonomous-lab throughput single_cell_genomics || [ $? -eq 1 ]
           autonomous-lab provenance single_cell_genomics || [ $? -eq 1 ]
           autonomous-lab loop single_cell_genomics || [ $? -eq 1 ]
+
+  wheel:
+    # `doctor` with no flag reads a manifest that is not inside the package directory, so it
+    # only survives a wheel because of the data-files entry in pyproject.toml. Every other job
+    # installs editable, where the repo-root copy is found and that entry is never exercised.
+    # Deleting it would break `doctor` for everyone who pip-installs and nothing else would
+    # notice, so build the wheel, install it somewhere clean, and run from outside the tree.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: doctor runs from an installed wheel, outside the checkout
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+          python -m venv /tmp/wheelenv
+          /tmp/wheelenv/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/wheelenv/bin/autonomous-lab doctor
 
   lint:
     runs-on: ubuntu-latest
@@ -70,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: No non-ASCII bytes in tracked text
         run: |
-          if LC_ALL=C grep -rlnP '[\x80-\xFF]' --include='*.py' --include='*.md' --include='*.toml' .; then
+          if LC_ALL=C grep -rlnP '[\x80-\xFF]' --include='*.py' --include='*.md' --include='*.toml' --include='*.json' .; then
             echo "non-ASCII bytes found in the files above"
             exit 1
           fi

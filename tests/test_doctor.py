@@ -8,7 +8,8 @@ unconditionally would be worse than none, because it would launder the assertion
 
 from __future__ import annotations
 
-from autonomous_lab.doctor import check_federated, render
+from autonomous_lab.cli import main
+from autonomous_lab.doctor import BUNDLED_ROOT, check_federated, check_manifest, render
 from autonomous_lab.registry import FEDERATED, FederatedSpec, Role, ValidatedRun
 
 
@@ -95,3 +96,47 @@ def test_every_shipped_federated_op_declares_a_run_card():
     for op, run in fed.validated_ops.items():
       assert run.script, f"{key}.{op} claims validation with no run card"
       assert run.evidence, f"{key}.{op} claims validation with no evidence"
+
+
+def test_the_bundled_manifest_ships_and_the_shipped_claims_agree_with_it():
+  """The claim this package publishes is that its statuses match plr-tested's record. That
+  record ships here, so the claim is checkable in this test suite rather than only on the
+  one machine that has the private checkout."""
+  checks = check_manifest(BUNDLED_ROOT)
+  bad = [c for c in checks if not c.ok]
+  assert not bad, "\n".join(f"{c.instrument}.{c.op}: {c.detail}" for c in bad)
+
+
+def test_a_root_with_no_manifest_is_a_failure_not_a_skip(tmp_path):
+  """The absence of a check is not a pass. A missing manifest means every federated status
+  is unverified against its source, and saying nothing would be the silence the manifest
+  exists to remove."""
+  checks = check_manifest(str(tmp_path))
+  assert len(checks) == 1
+  assert not checks[0].ok
+  assert "no manifest at" in checks[0].detail
+
+
+def test_doctor_runs_with_no_checkout(capsys):
+  """The contract a reader depends on: `doctor` with no flag checks the claims against the
+  bundled manifest and needs nothing the reader cannot obtain. It used to exit 2 and demand
+  a checkout of a private repo, which made the hardware claims uncheckable by anyone but
+  their author."""
+  assert main(["doctor"]) == 0
+  out = capsys.readouterr().out
+  assert "bundled in this repo" in out
+  assert "status agrees with plr-tested" in out
+  # The file-existence pass opens run cards, so it cannot run without the tree and must not
+  # be claimed here.
+  assert "run card exists" not in out
+
+
+def test_doctor_with_a_checkout_also_checks_the_files(tmp_path, monkeypatch, capsys):
+  """The flag keeps working and gains nothing it did not have: it still runs the manifest
+  comparison, and it still opens the run cards."""
+  _one_instrument(monkeypatch, _spec())
+  root = _fake_root(tmp_path, "s/run.py", 'TOKEN = "RUN_THING"\n')
+  assert main(["doctor", "--plr-tested", str(root)]) == 1  # no manifest in this fake tree
+  out = capsys.readouterr().out
+  assert "run card exists" in out
+  assert str(root) in out

@@ -29,6 +29,19 @@ That is the whole point of the cross-check. Before it, `validated_ops` was an as
 about someone else's repo that only its own author could refute. Now it is a claim that the
 source of truth can contradict, in CI, without anybody remembering to look.
 
+plr-tested is private, so most readers cannot obtain the checkout the file checks used to
+require. A claim that only its author can check is the one thing this package refuses to
+publish. The manifest is status metadata -- operation name, run-card path, confirm token,
+status, host, date, evidence sentence, caveats -- and carries none of the operator-owned
+inputs that made the source repo private: no volumes, no reagents, no method values, no run
+card bodies, no addresses or credentials. Its own caveat lines say so. A byte-identical copy
+of it therefore travels here as `evidence/manifest.json`, and `check_manifest` runs against
+that copy by default. The status comparison is the check that needs the record, not the
+checkout, so shipping the record is enough to put it in a reader's hands.
+
+`check_federated` is the part that genuinely needs the operator's tree, because it opens
+the run cards themselves. It runs only when a checkout is supplied.
+
 What neither checker reaches is `evidence` -- whether an operator really watched the thing
 run. That is prose about the physical world. Which is why the evidence strings stay narrow
 and carry their own caveats.
@@ -40,13 +53,49 @@ from __future__ import annotations
 
 import json
 import os
+import site
+import sys
+import sysconfig
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from .registry import FEDERATED
 
-# Where plr-tested publishes its own record. A checkout without it predates the manifest.
+# Where plr-tested publishes its own record, and where the copy of it sits in this repo.
+# The path is the same in both because the copy is byte-identical to the source record.
 MANIFEST_PATH = os.path.join("evidence", "manifest.json")
+
+
+def _bundled_root() -> str:
+  """Where the copy bundled with this package lives.
+
+  Several candidates, because there is more than one way to have this package. From a clone
+  or an editable install the manifest sits at the repo root, next to the package directory.
+  From a wheel it is installed as data under a prefix, since a directory that is not a
+  package does not survive the build, and which prefix depends on how pip was invoked: a
+  venv puts it under sys.prefix, a --user install does not. All are resolved from the
+  interpreter rather than the working directory: `doctor` has to give the same answer from
+  any cwd, or it is not a check anybody can repeat.
+
+  When neither exists this returns the repo-root candidate anyway, so the caller reports a
+  missing manifest at a path a reader recognises instead of a path from inside sys.prefix.
+  """
+  repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+  candidates = [repo]
+  # sys.prefix covers a venv or a system install. A --user install puts data files
+  # somewhere else entirely, so ask sysconfig and site rather than assuming one layout.
+  for base in (sys.prefix, sysconfig.get_path("data"), site.getuserbase()):
+    if base:
+      installed = os.path.join(base, "share", "autonomous-lab")
+      if installed not in candidates:
+        candidates.append(installed)
+  for candidate in candidates:
+    if os.path.isfile(os.path.join(candidate, MANIFEST_PATH)):
+      return candidate
+  return repo
+
+
+BUNDLED_ROOT = _bundled_root()
 
 # How this package's three buckets map onto the manifest's status vocabulary.
 _BUCKET_STATUS: Dict[str, str] = {
@@ -175,9 +224,13 @@ def _claims() -> List[tuple]:
 def check_manifest(plr_tested_root: str) -> List[Check]:
   """Compare this package's claims against plr-tested's own evidence manifest.
 
+  The root is either this repo (holding the bundled copy, which is what runs by default) or
+  an operator's plr-tested checkout. The comparison is identical either way, because the
+  copy is byte-identical to the record it came from.
+
   A missing manifest is reported as a failure rather than skipped. That is deliberate and
   it is the same rule this package applies everywhere else: the absence of a check is not a
-  pass. A checkout with no manifest means these claims are unverified against their source,
+  pass. A root with no manifest means these claims are unverified against their source,
   and reporting that as fine would be exactly the comfortable silence the manifest exists to
   remove.
   """
@@ -189,12 +242,13 @@ def check_manifest(plr_tested_root: str) -> List[Check]:
       Check(
         instrument="(manifest)",
         op=None,
-        claim=f"plr-tested publishes {MANIFEST_PATH}",
+        claim=f"the evidence manifest is present at {MANIFEST_PATH}",
         ok=False,
         detail=(
-          f"no manifest at {path}. This checkout predates it, or is not plr-tested. Without "
-          "it, every federated status here is an assertion about another repo that nothing "
-          "can contradict; update the checkout to cross-check them."
+          f"no manifest at {path}. Either the bundled copy is missing from this install, or "
+          "the checkout given predates the manifest or is not plr-tested. Without it, every "
+          "federated status here is an assertion about another repo that nothing can "
+          "contradict."
         ),
       )
     ]
@@ -298,8 +352,14 @@ def check_manifest(plr_tested_root: str) -> List[Check]:
   return out
 
 
-def render(checks: List[Check]) -> str:
-  lines = ["federated claims checked against the plr-tested checkout:\n"]
+def render(checks: List[Check], source: str = "the plr-tested checkout") -> str:
+  """Render a report, naming what it was checked against.
+
+  The source is a parameter because the two runs have different reach and a header that
+  said "checkout" for both would overstate the default one: without a checkout, nothing
+  opened a run card.
+  """
+  lines = [f"federated claims checked against {source}:\n"]
   lines += [c.render() for c in checks]
   bad = [c for c in checks if not c.ok]
   lines.append("")

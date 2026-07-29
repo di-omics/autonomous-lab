@@ -16,7 +16,13 @@ import logging
 import sys
 from typing import List
 
-from .doctor import check_federated, check_manifest, render as render_checks
+from .doctor import (
+  BUNDLED_ROOT,
+  MANIFEST_PATH,
+  check_federated,
+  check_manifest,
+  render as render_checks,
+)
 from .executor import Executor
 from .intelligence import (
   BENCHMARKS,
@@ -138,23 +144,31 @@ def _gaps(args) -> int:
 
 
 def _doctor(args) -> int:
-  """Check the federated claims against a real plr-tested checkout.
+  """Check the federated claims against the record plr-tested publishes about them.
 
-  Two passes with different powers. The first checks that cited files and tokens exist,
-  which catches a rename. The second compares this package's status claims against
-  plr-tested's own published manifest, which catches the disagreement existence cannot:
-  an operation this package still calls validated that its source repo has downgraded.
+  Two passes with different powers, and only one of them needs the operator's tree.
+
+  The status comparison reads an evidence manifest. A byte-identical copy of plr-tested's
+  own manifest ships in this repo, so with no flag `doctor` runs that comparison against
+  the bundled copy: any reader who clones this repo can check the statuses, the run-card
+  paths and the confirm tokens the ledger cites. That is the pass that catches the
+  disagreement existence cannot -- an operation this package still calls validated that its
+  source repo has downgraded.
+
+  `--plr-tested PATH` points the same comparison at the operator's checkout, which is the
+  authority, and additionally runs the file-existence pass: that one opens the run cards to
+  confirm the cited script is there and the confirm token is really in it, so it cannot run
+  without the tree. plr-tested is private, so that pass is the operator's to run.
   """
   wc = _workcell(args)
   root = wc.plr_tested_root
-  if not root:
-    print(
-      "error: doctor needs a plr-tested checkout to check against; pass --plr-tested PATH",
-      file=sys.stderr,
-    )
-    return 2
-  checks = check_federated(root) + check_manifest(root)
-  print(render_checks(checks))
+  if root:
+    checks = check_federated(root) + check_manifest(root)
+    source = f"the plr-tested checkout at {root}"
+  else:
+    checks = check_manifest(BUNDLED_ROOT)
+    source = f"the {MANIFEST_PATH} bundled in this repo"
+  print(render_checks(checks, source))
   return 0 if all(c.ok for c in checks) else 1
 
 
@@ -461,7 +475,11 @@ def build_parser() -> argparse.ArgumentParser:
   gp.set_defaults(func=_gaps)
 
   dc = sub.add_parser(
-    "doctor", help="check this package's claims about plr-tested against a real checkout"
+    "doctor",
+    help=(
+      "check this package's claims against the bundled evidence manifest; add "
+      "--plr-tested PATH to also open the run cards in a checkout"
+    ),
   )
   common(dc)
   dc.set_defaults(func=_doctor)

@@ -4,8 +4,9 @@ Whether a lab can close a loop from hypothesis to evidence, and which leg breaks
 
 [plr-reverse-engineer](https://github.com/di-omics/plr-reverse-engineer) brings lab
 instruments under PyLabRobot control one at a time.
-`plr-tested` (private) is the PyLabRobot code that has actually been run on real
-hardware. This asks the question that only makes sense across all of them at once: given the instruments on the bench and the command sets decoded so
+`plr-tested` *(private)* is the PyLabRobot code that has actually been run on real
+hardware. Its evidence manifest ships in this repo, so the status, run-card and
+confirm-token claims below can be checked with `autonomous-lab doctor` and no checkout. This asks the question that only makes sense across all of them at once: given the instruments on the bench and the command sets decoded so
 far, how much of a real protocol runs unattended, and what exactly is blocking the rest?
 
 It answers by costing every step against the actual state of the code. Nothing here is
@@ -26,7 +27,7 @@ autonomous-lab loop single_cell_genomics      # can this lab close a loop? which
 autonomous-lab stock                          # every instrument, its role, how far its map is
 autonomous-lab ledger single_cell_genomics    # cost a protocol step by step
 autonomous-lab gaps                           # the RE queue, ranked by steps freed
-autonomous-lab doctor --plr-tested ../plr-tested   # check my claims against your checkout
+autonomous-lab doctor                         # check my hardware claims; needs nothing else
 autonomous-lab run single_cell_genomics       # run it as far as it honestly goes
 
 autonomous-lab qc single_cell_genomics        # can the QC gates be evaluated at all?
@@ -337,47 +338,69 @@ per-command queue would be advice nobody could act on.
 The instrument registry is derived from `SEEDS`, so it cannot drift. The federated claims
 have no such luxury: `validated_ops` is hand-written paths and prose about a repo this one
 does not control, which makes it exactly the kind of assertion this package refuses to
-accept from anybody else. So it ships a checker.
+accept from anybody else. So it ships a checker, and the evidence the checker reads.
+
+```
+$ autonomous-lab doctor
+federated claims checked against the evidence/manifest.json bundled in this repo:
+
+  [ok  ] hhs.iswap_to_hhs             status agrees with plr-tested: validated
+  [ok  ] hhs.iswap_to_hhs             cites the same run card as plr-tested
+  [ok  ] hhs.iswap_to_hhs             confirm token agrees with plr-tested: RUN_ISWAP_PLATE_TEST
+  ...
+  [ok  ] (coverage)                   6 validated operation(s) in plr-tested are not modelled here
+
+  all 28 checkable claims hold.
+```
+
+No flag, no checkout, no credentials. Install or clone this repo and that command runs,
+which is the point. `plr-tested` *(private)* holds supervised physical-instrument run cards
+and observed failures, kept as evidence, and it is private because the work is high stakes
+and a reader who cannot inspect the evidence should not be shown a claim resting on it.
+That rule cuts both ways: a status table citing a repo nobody else can open is exactly such
+a claim. So what travels here instead is the record. `evidence/manifest.json` is a
+byte-identical copy of the machine-readable manifest `plr-tested` publishes and verifies in
+its own CI under its own rules. It carries operation names, run-card paths, confirm tokens,
+statuses, hosts, dates, evidence sentences and caveats, and none of the operator-owned
+inputs -- volumes, reagents, method values -- that made the source repo private.
+`evidence/README.md` gives the full schema and what is left out.
+
+So `doctor` compares this package's claims against that record operation by operation: same
+status, same run card, same confirm token. Where they disagree, the repo with the
+instrument wins, because it is the one with the operator. **Before this, `validated_ops`
+was an assertion about someone else's repo that only its own author could refute. Now it is
+a claim any reader can contradict, and CI does it on a schedule without anyone remembering
+to look.** A missing manifest is reported as a failure rather than skipped -- the absence of
+a check is not a pass.
+
+Writing the manifest immediately caught one: the ODTC and Tecan run cards gate on
+`--confirm i-am-watching`, and this package had recorded them as having no gate at all.
+
+The one check that still needs the tree is whether the cited files are really there, since
+it has to open them. Point `doctor` at a checkout and it runs that pass too:
 
 ```
 $ autonomous-lab doctor --plr-tested ../plr-tested
-  [ok  ] star.wgs_prep_lysis  run card exists: liquid-handler/starlab_live/00_wgs_prep_1col_src1lysis_src3rxn_dst1_hhs_DRY.py
-  [ok  ] star.wgs_prep_lysis  confirm token appears in the run card: RUN_SINGLE_COL_WGS_PREP_HHS
+federated claims checked against the plr-tested checkout at ../plr-tested:
+
+  [ok  ] hhs                          entry exists: liquid-handler/run_on_pi.sh
+  [ok  ] hhs.iswap_to_hhs             run card exists (validated): liquid-handler/starlab_live/test_iswap_plate_rail35pos0_to_rail27_variable.py
+  [ok  ] hhs.iswap_to_hhs             confirm token appears in the run card: RUN_ISWAP_PLATE_TEST
   ...
-  all 16 checkable claims hold.
+
+  all 49 checkable claims hold.
 ```
 
-For every operation this package calls validated, `doctor` confirms the run card really
-exists at that path in your plr-tested checkout, and that the confirm token the ledger
-tells you to type really appears in that script. It exits non-zero on drift. This caught a
+That confirms the run card exists at the cited path and that the confirm token the ledger
+tells you to type really appears in the script. It exits non-zero on drift, and it caught a
 real bug during development: every STAR step was citing `RUN_PCR_ENRICHMENT_ODTC_LIDDED_FULL`,
 when the whole-genome sequencing preparation run card actually gates on `RUN_SINGLE_COL_WGS_PREP_HHS`. The ledger was
 telling an operator to type a token that would have refused the run.
 
-Existence is not status, though. A run card that is still on disk proves nothing about
-whether anyone watched it run, so those checks cannot catch the more interesting
-disagreement: plr-tested downgrading an operation to `written` while this package still
-calls it validated.
-
-plr-tested now publishes `evidence/manifest.json`,
-its own machine-readable record of what has met an instrument, verified by its own CI under
-its own rules. So `doctor` cross-checks against it, operation by operation:
-
-```
-  [ok  ] star.wgs_prep_lysis          status agrees with plr-tested: validated
-  [ok  ] star.wgs_prep_lysis          cites the same run card as plr-tested
-  [ok  ] star.wgs_prep_lysis          confirm token agrees with plr-tested: RUN_SINGLE_COL_WGS_PREP_HHS
-  [ok  ] (coverage)                   6 validated operation(s) in plr-tested are not modelled here
-```
-
-Where they disagree, the repo with the instrument wins, because it is the one with the
-operator. **Before this, `validated_ops` was an assertion about someone else's repo that
-only its own author could refute. Now it is a claim the source of truth can contradict, in
-CI, without anyone remembering to look.** A checkout with no manifest is reported as a
-failure rather than skipped -- the absence of a check is not a pass.
-
-Writing the manifest immediately caught one: the ODTC and Tecan run cards gate on
-`--confirm i-am-watching`, and this package had recorded them as having no gate at all.
+Existence is not status, which is why it is the weaker of the two passes and not the one
+that ships. A run card still on disk proves nothing about whether anyone watched it run,
+and it cannot catch `plr-tested` downgrading an operation to `written` while this package
+goes on calling it validated. The manifest can, and anybody can run that check.
 
 What neither checker can reach is `evidence` -- whether an operator really watched the
 thing run. That is prose about the physical world, which is why the evidence strings stay
@@ -449,7 +472,7 @@ event receiver and silently steals the first one's callbacks.
 pip install -e '.[dev]' && pytest
 ```
 
-145 device-free tests. The ones that matter most try to make the layer lie:
+149 device-free tests. The ones that matter most try to make the layer lie:
 
 - claim a step is automated when its command is undecoded; claim a decoded command is
   runnable while its siblings are not; claim a federated leg runs when no run card was ever
@@ -474,4 +497,7 @@ from the ledger's own physical-hop computation rather than a parallel list, beca
 independent lists eventually disagree and nobody notices which is wrong.
 
 The doctor tests prove the checker itself catches a renamed run card and a stale token,
-because a checker that passed unconditionally would just launder the assertion.
+because a checker that passed unconditionally would just launder the assertion. One of them
+runs the manifest comparison against the bundled `evidence/manifest.json`, so a status this
+package claims that plr-tested does not agree with fails the suite here, on any machine,
+rather than only where the private checkout exists.

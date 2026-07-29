@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "note": "Canonical machine-readable record of what has met an instrument. The status tables in the READMEs are written for humans; this file is what a machine should read, and evidence/check.py verifies every claim in it against the tree. See evidence/README.md.",
+  "vocabulary": {
+    "validated": "ran on the physical instrument, with a person watching, and passed",
+    "written": "the script exists and runs dry or sim-clean; it has never met the instrument",
+    "failed": "ran on the physical instrument and did not pass",
+    "not_started": "named as intended work; no script exists yet"
+  },
+  "hosts": {
+    "starpi": "Raspberry Pi wired to the liquid handler and the ODTC",
+    "starpi2": "second Raspberry Pi; the Tecan Infinite lives here"
+  },
+  "instruments": [
+    {
+      "key": "star",
+      "device": "liquid handler",
+      "entry": "liquid-handler/run_on_pi.sh",
+      "operations": [
+        {
+          "op": "bringup",
+          "script": "liquid-handler/starlab_live/test_star_no_autoload.py",
+          "confirm_token": null,
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "STAR bring-up with skip_autoload=True; channels and iSWAP homed, autoload skipped.",
+          "caveats": []
+        },
+        {
+          "op": "wgs_prep_lysis",
+          "script": "liquid-handler/starlab_live/00_wgs_prep_1col_src1lysis_src3rxn_dst1_hhs_DRY.py",
+          "confirm_token": "RUN_SINGLE_COL_WGS_PREP_HHS",
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "Single-column DRY motion coverage for the lysis and reaction additions, with the stage transfer geometry tuned against the physical deck.",
+          "caveats": [
+            "Dry only. The wet single addition is written and has never run.",
+            "Transfer volumes, source mapping, and wet-run parameters are operator-owned inputs and are not recorded here."
+          ]
+        },
+        {
+          "op": "pcr_enrichment_choreography",
+          "script": "liquid-handler/starlab_live/run_pcr_enrichment_odtc_LIDDED_1col_full_dry.py",
+          "confirm_token": "RUN_PCR_ENRICHMENT_ODTC_LIDDED_FULL",
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "The LIDDED choreography: 9 motion legs plus 4 lid legs around the ODTC trip, 22 SUCCESS, 0 failures, deck self-returned to start. Tag pcr-enrichment-lidded-inwellmix-2026-07-16.",
+          "caveats": [
+            "Dry. A real thermal cycle inside the choreography has not run to completion.",
+            "This script dispatches sub-scripts that carry their own confirm tokens (RUN_LID_MOVE, RUN_ODTC_ISWAP_FWD, RUN_ODTC_ISWAP_RET, RUN_ISWAP_MAG_MOVE_TEST, RUN_ISWAP_MAG_RETURN_TEST)."
+          ]
+        },
+        {
+          "op": "iswap_lid_move",
+          "script": "liquid-handler/starlab_live/test_iswap_lid_variable.py",
+          "confirm_token": "RUN_LID_MOVE",
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "Lid on and de-lid confirmed between rail35 pos4 and pos0.",
+          "caveats": []
+        },
+        {
+          "op": "pcr_enrichment_round1_cleanup",
+          "script": "liquid-handler/starlab_live/02_pcr_enrichment_round1_cleanup_col1_dry_v2_p50low.py",
+          "confirm_token": null,
+          "status": "written",
+          "wet": false,
+          "observed": null,
+          "evidence": "Full bead-clean state machine covering bead addition, wash, and elution. Dry low-volume motion is sim-clean and the operation is wired into the end-to-end dry runners.",
+          "caveats": [
+            "Never run wet. Mock-liquid bead cleaning is the intended next work and an open priority.",
+            "Cleanup ratio, input volume, and reagent settings are operator-owned inputs and are not recorded here."
+          ]
+        },
+        {
+          "op": "wgs_prep_wet_single_addition",
+          "script": null,
+          "confirm_token": null,
+          "status": "not_started",
+          "wet": true,
+          "observed": null,
+          "evidence": "",
+          "caveats": [
+            "Named in the liquid-handler status table as written-not-yet-run; no dedicated wet run card exists in the tree yet."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "hhs",
+      "device": "heater-shaker",
+      "entry": "liquid-handler/run_on_pi.sh",
+      "operations": [
+        {
+          "op": "iswap_to_hhs",
+          "script": "liquid-handler/starlab_live/test_iswap_plate_rail35pos0_to_rail27_variable.py",
+          "confirm_token": "RUN_ISWAP_PLATE_TEST",
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "6 of 6 transfers clean between rail35 pos0 and rail27 pos2; pickup landed at z 0.950 every time.",
+          "caveats": [
+            "Driven over the STAR TCC bus, so it shares the STAR's one-process-per-instrument constraint."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "odtc",
+      "device": "Inheco ODTC thermocycler",
+      "entry": "instrument-integrations/run_on_pi.sh",
+      "operations": [
+        {
+          "op": "offline_checks",
+          "script": "instrument-integrations/odtc/odtc_offline_checks.py",
+          "confirm_token": null,
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "72 checks against the real PyLabRobot backend under PyLabRobot 0.2.1, including method XML generation and safety limits.",
+          "caveats": [
+            "Off-instrument. This validates the driver's shape, not the thermocycler."
+          ]
+        },
+        {
+          "op": "bringup",
+          "script": "instrument-integrations/odtc/02_odtc_bringup.py",
+          "confirm_token": null,
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "Bring-up, block hold to 45.00 C, and a full cycling profile to 50.00 C. PlateauTime confirmed to be in seconds.",
+          "caveats": []
+        },
+        {
+          "op": "pcr_enrichment_round1",
+          "script": "instrument-integrations/odtc/05_odtc_run_protocol.py",
+          "confirm_token": "i-am-watching",
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "Supervised PCR-enrichment cycling completed on the instrument.",
+          "caveats": [
+            "The high-temperature setpoint approached the block ceiling.",
+            "The choreography does not close the ODTC door around the thermal leg, which is not a thermally sound way to run a real PCR.",
+            "Operator method values are not published.",
+            "pcr-enrichment-round-2 has never run."
+          ]
+        },
+        {
+          "op": "door_move",
+          "script": "instrument-integrations/odtc/03_odtc_door.py",
+          "confirm_token": "i-am-watching",
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi", "date": "2026-07-16" },
+          "evidence": "Reset and Initialize proven benign on the instrument with a plate and lid seated in the nest.",
+          "caveats": [
+            "The block reaches 99 C and the lid 105 C, and both stay hot after a program ends."
+          ]
+        },
+        {
+          "op": "iswap_handoff_into_odtc",
+          "script": null,
+          "confirm_token": null,
+          "status": "not_started",
+          "wet": false,
+          "observed": null,
+          "evidence": "",
+          "caveats": [
+            "Plate-move legs are drafted inside the choreography; the handoff geometry has not been tuned on hardware."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "tecan",
+      "device": "Tecan Infinite 200 PRO",
+      "entry": "instrument-integrations/run_on_pi.sh",
+      "operations": [
+        {
+          "op": "offline_checks",
+          "script": "instrument-integrations/tecan-infinite/tecan_offline_checks.py",
+          "confirm_token": null,
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi2", "date": "2026-07-16" },
+          "evidence": "24 checks covering backend shape and 96-well geometry, with no device attached. Passed on both Pis.",
+          "caveats": ["Off-instrument."]
+        },
+        {
+          "op": "probe_usb",
+          "script": "instrument-integrations/tecan-infinite/01_tecan_probe_usb.py",
+          "confirm_token": null,
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi2", "date": "2026-07-11" },
+          "evidence": "USB probe of 0c47:8007 identified the device as TECAN AUSTRIA BIO with no kernel driver attached.",
+          "caveats": ["Read-only. First contact; the stage did not move."]
+        },
+        {
+          "op": "bringup",
+          "script": "instrument-integrations/tecan-infinite/02_tecan_bringup.py",
+          "confirm_token": "i-am-watching",
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi2", "date": "2026-07-16" },
+          "evidence": "setup() and INIT FORCE completed, stage homed, driver ready.",
+          "caveats": [
+            "This unit rejects ABS #BEAM DIAMETER with ERR1:Command is not valid, so the absorbance path runs on a hardcoded 700 fallback rather than a value the reader gave it."
+          ]
+        },
+        {
+          "op": "tray_cycle",
+          "script": "instrument-integrations/tecan-infinite/03_tecan_tray.py",
+          "confirm_token": "i-am-watching",
+          "status": "validated",
+          "wet": false,
+          "observed": { "host": "starpi2", "date": "2026-07-16" },
+          "evidence": "Five clean open/close cycles. Close is stable at 3.6 s on all five. Open is bimodal: 3.2 s from a settled stage, 5.3 s when a failed read has left the stage parked mid-scan.",
+          "caveats": [
+            "Timing tracks the stage's start position, not the plate. Budget the 5.3 s worst case for an iSWAP handoff."
+          ]
+        },
+        {
+          "op": "read_absorbance",
+          "script": "instrument-integrations/tecan-infinite/04_tecan_read_absorbance.py",
+          "confirm_token": "i-am-watching",
+          "status": "failed",
+          "wet": false,
+          "observed": { "host": "starpi2", "date": "2026-07-16" },
+          "evidence": "Deterministic TimeoutError reading USB, 2 of 2, raised in driver.py run_scan on 'ABSOLUTE MTP,Y=<y_stage>'. setup() and the tray succeed in the same run, so the reader is talking and its drawer obeys; the Y-stage command is simply never answered. No wells, no OD matrix.",
+          "caveats": [
+            "Distinct from the older 20-byte calibration-frame decode bug, which is a decode failure downstream of a scan that streams.",
+            "Not yet explained: it differs by Pi with an identical environment.",
+            "counts_per_mm confirmation is blocked behind this.",
+            "The reader has never returned an OD matrix. Do not describe it as working."
+          ]
+        },
+        {
+          "op": "read_rhodamine",
+          "script": "instrument-integrations/tecan-infinite/05_tecan_read_rhodamine.py",
+          "confirm_token": "i-am-watching",
+          "status": "written",
+          "wet": true,
+          "observed": null,
+          "evidence": "Rhodamine-B fluorescence ladder read card exists and is sim-clean.",
+          "caveats": ["Never run on the instrument."]
+        },
+        {
+          "op": "iswap_handoff_into_reader",
+          "script": null,
+          "confirm_token": null,
+          "status": "not_started",
+          "wet": false,
+          "observed": null,
+          "evidence": "",
+          "caveats": ["Not started."]
+        }
+      ]
+    }
+  ]
+}

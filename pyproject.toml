@@ -25,3 +25,11 @@ autonomous-lab = "autonomous_lab.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["autonomous_lab*"]
+
+# `doctor` reads evidence/manifest.json with no flag, so the file has to survive a wheel or
+# the command only works from a clone -- and the whole reason the manifest is copied here is
+# that a reader should not need anything they cannot get. Installed under sys.prefix rather
+# than duplicated into the package, because a second copy of a record whose value is being
+# byte-identical to its source is a copy that will eventually disagree with it.
+[tool.setuptools.data-files]
+"share/autonomous-lab/evidence" = ["evidence/manifest.json", "evidence/README.md"]
