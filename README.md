@@ -37,6 +37,9 @@ autonomous-lab throughput single_cell_genomics  # plates/day, or why that number
 autonomous-lab provenance single_cell_genomics  # what could be proven about a run afterwards
 autonomous-lab lineage single_cell_genomics   # which cell did this read come from?
 autonomous-lab knowledge                      # encoded expert judgment and robot benchmarks
+
+autonomous-lab information single_cell_genomics  # what caps information per dollar per cycle
+autonomous-lab worldmodel                     # what a predictive model buys, and never will
 ```
 
 ## What it reports today
@@ -317,6 +320,95 @@ the usual convention and the correct one -- the absence of a measurement is not 
 adequacy. The STAR's dry motion is validated; its volumetric accuracy at the working volume
 has never been measured, and no camera retires that benchmark. It needs a calibration
 experiment.
+
+## What all of it is for: information per dollar per cycle
+
+Every layer above answers a piece of one question nobody had assembled: **how much does this
+lab learn per dollar per experimental cycle?** Stating it plainly reframes the package.
+Throughput is not the goal and autonomy is not the goal. A lab running a thousand plates a
+day that cannot tell which of them are real has bought motion, not information.
+
+```
+$ autonomous-lab information single_cell_genomics
+
+  NOT COMPUTED
+  3 of 3 inputs are missing (stated_question, stated_prior, measured_per_cycle_costs).
+  Without a prior there is no joint, no posterior and therefore no KL -- the objects do
+  not exist, so this is not an uncertain number, it is the absence of a functional to
+  evaluate. Obtainable this week: stated_question.
+
+  CEILING   DESIGN
+      all 2 declared gate(s) are unevaluable, so the cycle emits data and returns no
+      decision. More reads over the same design produce more data and still no decision
+      decisions per cycle    0 of 2 gate(s)
+
+  REWORK, priced in cycles
+      caught at the step 3   cycle plus the decision 2   never caught, unbounded 9
+
+  BINDING CONSTRAINT, in evaluation order
+    BINDS  execution        an unattended run reaches step 1 of 18
+    BINDS  measurement      2 of 2 gate(s) cannot be evaluated
+    BINDS  decision         6 failure mode(s) destroy material with nothing to notice
+    BINDS  record           5 unobserved custody transfer(s)
+      ?    coverage / durability / expert_transfer   no report supplied
+```
+
+**It refuses to emit the number**, and the refusal is the most defensible part. Expected
+information gain needs a stated question and a stated prior, and almost no lab writes either
+down. Emitting a figure over an unstated prior is what `throughput` refuses to do with
+unmeasured durations, one level of abstraction up and with more authority. So it computes
+the structure, which is real without a prior, and names the one missing input obtainable
+this week: stating the target quantity costs a sentence and changes the answer, because a
+parameter-level bound is an overestimate of what is learned about anything derived from it.
+
+**The ceiling is set by design, not by spend.** Every gate on the reference protocol is
+unevaluable, so the cycle yields data and **zero decisions**. More reads buy more data and
+still no decision. Separating "buy more" from "this cannot work" is the most useful thing
+here, and it is resolved from `lineage` and `qc` rather than recomputed.
+
+**Rework is priced in cycles, not dollars**, which is the honest currency when no cost model
+exists. Three failures cost a step, two cost the cycle plus the decision taken on it, and
+**nine are unbounded** -- never caught, so nothing triggers the rerun and there is no number
+of cycles to charge.
+
+**The binding constraint is the procurement answer.** Seven layers evaluated in order,
+returning the first that binds. On this protocol it is **execution**, and nothing downstream
+of it is worth buying until it is relieved. That is a specific, checkable answer to "what
+should we spend on", and it is frequently not the thing being shopped for.
+
+## What a world model buys, and the boundary it does not move
+
+`vision` already draws the hard line: some conditions are INVISIBLE, and that is physics
+rather than model quality. It also names the real blocker for the visible ones, which is not
+the camera: every check needs **labelled examples of the failure**, and failures are rare by
+design and nobody photographs the run that went wrong while it was going wrong.
+
+A predictive model of the scene changes exactly one of those, and being precise about which
+is the whole module.
+
+```
+$ autonomous-lab worldmodel
+
+  checks a label-free approach would unblock   5
+    bead_pellet_retained_through_wash  (catches bead_pellet_aspirated)
+    ...
+  conditions no approach lifts at any capability   11
+```
+
+It attacks the labelled-failure blocker directly, since a model of what the scene *should*
+look like flags deviation without ever having seen the failure. It moves the invisible
+boundary **by nothing at all**: a well of denatured enzyme and a well of active enzyme emit
+identical photons, so a predictor emits the same frame for both and the deviation signal is
+zero for the failure that matters most. That list of 11 is computed from `vision`'s own
+taxonomy rather than restated, so it cannot drift.
+
+And what a deviation signal *is* matters as much as what it detects. It says the scene is not
+what was expected. It does not say what went wrong, and it does not say the deviation
+matters. **An anomaly detector that fires on a technician's sleeve has detected something
+real and useless.** A label-free approach removes the labelling requirement and introduces
+its own: nominal data for this bench under this lighting, and a false-positive rate measured
+on real nominal variation. A detector whose miss rate on real failures nobody measured is
+not a safety device, it is a belief about one.
 
 ## The RE queue is computed, not argued about
 

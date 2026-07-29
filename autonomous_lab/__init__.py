@@ -35,9 +35,30 @@ five further layers ask whether the rest hold:
   lineage       which cell a read came from -- and whether pooling already destroyed the
                 answer, which is a different question from whether the plate was tracked.
   intelligence  the tacit expert judgment and the benchmarks a robot must meet first.
+
+And the one every other layer is instrumental to:
+
+  information   how much this lab learns per dollar per experimental cycle. It refuses to
+                emit that number -- expected information gain needs a stated question and a
+                stated prior, and almost no lab writes either down -- and computes instead
+                the ceiling set by design, the discount imposed by silent failure, the
+                rework priced in cycles, and which of seven layers binds right now.
+  worldmodel    what a predictive model of the scene buys a lab that cannot label its own
+                failures, and the boundary it does not move by one micron.
 """
 
 from .executor import Executor, Handoff, RunReport, StepResult
+from .information import (
+  Cap,
+  InformationReport,
+  Layer,
+  LayerStanding,
+  binding_constraint,
+  information_ceiling,
+  information_per_dollar,
+  information_report,
+  rework_profile,
+)
 from .intelligence import (
   Benchmark,
   BenchmarkStatus,
@@ -71,6 +92,15 @@ from .registry import FEDERATED, FederatedSpec, InstrumentSpec, declared, regist
 from .throughput import Duration, TimeBasis, estimate
 from .vision import Observable, VisionCapability, VisionRequirement, VisualCheck
 from .workcell import InstrumentConfig, Workcell
+from .worldmodel import (
+  Approach,
+  WorldModelReport,
+  lifts,
+  unmoved,
+  unmoved_and_silent,
+  world_model_report,
+  would_retire_labels,
+)
 
 
 def loop_closure_for(protocol, workcell=None):
@@ -91,13 +121,14 @@ def loop_closure_for(protocol, workcell=None):
 
 
 __all__ = [
+  "Approach",
   "Artifact",
-  "Cohort",
-  "MISASSIGNMENT",
   "Attestation",
   "Basis",
   "Benchmark",
   "BenchmarkStatus",
+  "Cap",
+  "Cohort",
   "Criterion",
   "CustodyGap",
   "Decision",
@@ -110,24 +141,28 @@ __all__ = [
   "FederatedSpec",
   "Gate",
   "Handoff",
+  "InformationReport",
   "InstrumentConfig",
   "InstrumentSpec",
   "Judgment",
   "Latency",
+  "Layer",
+  "LayerStanding",
   "Ledger",
   "Leg",
   "LineageEdge",
   "LineageGraph",
   "LineageReport",
-  "Misassignment",
   "LoopClosure",
+  "MISASSIGNMENT",
+  "Misassignment",
   "Observable",
   "Protocol",
   "Readiness",
   "Role",
   "RunRecord",
-  "Separability",
   "RunReport",
+  "Separability",
   "Severity",
   "Step",
   "StepResult",
@@ -143,7 +178,9 @@ __all__ = [
   "VisionRequirement",
   "VisualCheck",
   "Workcell",
+  "WorldModelReport",
   "ZeroDecodeOp",
+  "binding_constraint",
   "build_ledger",
   "build_lineage",
   "cost_step",
@@ -151,7 +188,11 @@ __all__ = [
   "estimate",
   "evaluate",
   "gate_report",
+  "information_ceiling",
+  "information_per_dollar",
+  "information_report",
   "knowledge_summary",
+  "lifts",
   "lineage_report",
   "loop_closure",
   "loop_closure_for",
@@ -159,7 +200,12 @@ __all__ = [
   "rank_unlocks",
   "recovery_report",
   "registry",
+  "rework_profile",
   "spec",
   "trusted_for",
   "undeclared_transforms",
+  "unmoved",
+  "unmoved_and_silent",
+  "world_model_report",
+  "would_retire_labels",
 ]
