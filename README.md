@@ -18,8 +18,7 @@ and throughput arithmetic. Unsupported actions stop at the boundary. Synthetic
 demonstrations say they are synthetic. Hardware claims are checked against the code and
 run cards that support them.
 
-Public developer prototype for [Clair](https://clair.bio), built by
-[Di Hu](https://reinhaudt.com).
+Public developer prototype, built by [Di Hu](https://reinhaudt.com).
 
 ## The control loop
 
