@@ -501,3 +501,7 @@ because a checker that passed unconditionally would just launder the assertion. 
 runs the manifest comparison against the bundled `evidence/manifest.json`, so a status this
 package claims that plr-tested does not agree with fails the suite here, on any machine,
 rather than only where the private checkout exists.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
