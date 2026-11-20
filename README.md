@@ -65,8 +65,8 @@ on `ABSOLUTE MTP,Y=`, 2 of 2, and the reader has never returned an OD matrix. Ca
 would make a known defect look like unwritten work. One means do reverse-engineering; the
 other means debug a real failure. A planner needs to know which.
 
-The reason the numbers are this low is the honest one. Across all six reverse-engineered
-instruments, **0 of 54 seeded commands are decoded**. Not one of them can be driven
+The reason the numbers are this low is the honest one. Across all 5 reverse-engineered
+instruments on plr-re's `main`, **0 of 45 seeded commands are decoded**. Not one of them can be driven
 headlessly, and plr-re's own coverage gate refuses an armed run against an incomplete map.
 The only real instrument contact available today is the AVITI run-folder read, USB
 enumeration, and two socket probes. This tool exists to say that precisely, and to say
