@@ -12,7 +12,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04, which has no Python 3.9 build, so the 3.9 floor could not
+    # even be installed there. 24.04 still has both versions in the matrix.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
